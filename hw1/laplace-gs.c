@@ -19,9 +19,9 @@ int main(int argc, char *argv[]){
     // Gauss-Seidel iterations:
     // u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k+1]; j < i) - sum(a_ij*u_j[k]; j > i)
     // With
-    // a_ij = 2, i=j
-    // a_ij = -1, (i-j)^2 = 1
-    // a_ij = 0 otherwise
+    //       ⎧  2,  i=j
+    // a_ij =⎨ -1,  (i-j)^2 = 1
+    //       ⎩  0,  otherwise
     // 
     // ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k+1] + u_(i+1)[k]) 
 
@@ -66,13 +66,13 @@ int main(int argc, char *argv[]){
             sumsq += pow(((-u[i-1] + 2*u[i] -u[i+1]) - 1), 2);
         sumsq += pow(((-u[N-2] + 2*u[N-1]) - 1), 2);
         
-        printf("Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, sqrt(sumsq));
+        printf("Norm of residual ‖Au[k] - f‖ at iteration %i =  %.8f\n", iter, sqrt(sumsq));
 
         //copy new vector uu into u for next iteration
 //        for (int i=0; i<N; i++) u[i]=uu[i];
     }
 
-    printf("Norm of residual ||Au[k] - f|| = %.8f\n", sqrt(sumsq));
+    printf("Norm of residual ‖Au[k] - f‖ = %.8f\n", sqrt(sumsq));
     free(u);
 //    free(uu);
 }
