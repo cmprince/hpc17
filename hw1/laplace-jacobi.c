@@ -3,6 +3,8 @@
 #include <math.h>
 #include <string.h>
 
+double laplace_L2_norm(double *v, int len);
+
 int main(int argc, char *argv[]){
 
     const double term_factor = 0.0001;
@@ -15,7 +17,8 @@ int main(int argc, char *argv[]){
         N = atoi(argv[1]);
 
     double h = 1/(double)N;
-    
+    printf("%.4f\n", h); 
+
     // Jacobi iterations:
     // u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
     // With
@@ -38,16 +41,11 @@ int main(int argc, char *argv[]){
         u[i] = 0.;
     }   
     
-    double sumsq;
+    double norm0;
     
     // calculate L2 norm or residual for initial guess
     // (i.e., a silly way of calculating sqrt (N))
-    sumsq = 0;
-    sumsq += pow(((2*u[0] - u[1]) - 1), 2);
-    for (int i=1; i<N-1; i++)
-        sumsq += pow(((-u[i-1] + 2*u[i] -u[i+1]) - 1), 2);
-    sumsq += pow(((-u[N-2] + 2*u[N-1]) - 1), 2);
-
+    norm0 = laplace_L2_norm(u, N);
 
     for (int iter=0; iter<max_iter; iter++){
         uu[0] = 0.5*(1 + u[1]);
@@ -56,22 +54,25 @@ int main(int argc, char *argv[]){
         uu[N-1] = 0.5*(1 + u[N-2]);
 
         //for (int i=0; i<N; i++) printf ("%.2f  ", uu[i]);
-
-        //calculate L2 norm
-        sumsq = 0;
-        sumsq += pow(((2*u[0] - u[1]) - 1), 2);
-        for (int i=1; i<N-1; i++)
-            sumsq += pow(((-u[i-1] + 2*u[i] -u[i+1]) - 1), 2);
-        sumsq += pow(((-u[N-2] + 2*u[N-1]) - 1), 2);
         
-        printf("Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, sqrt(sumsq));
+        printf("Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
+                iter, laplace_L2_norm(u, N));
 
         //copy new vector uu into u for next iteration
         for (int i=0; i<N; i++) u[i]=uu[i];
     }
 
-    printf("Norm of residual ||Au[k] - f|| = %.8f\n", sqrt(sumsq));
     free(u);
     free(uu);
 }
 
+double laplace_L2_norm(double *v, int len){
+
+    double sumsq = 0;
+    sumsq += pow(((2*v[0] - v[1]) - 1), 2);
+    for (int i=1; i<len-1; i++)
+        sumsq += pow(((-v[i-1] + 2*v[i] -v[i+1]) - 1), 2);
+    sumsq += pow(((-v[len-2] + 2*v[len-1]) - 1), 2);
+
+    return sqrt(sumsq);
+}
