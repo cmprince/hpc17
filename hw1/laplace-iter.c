@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include "util.h"
 
 /* A naive numerical solver for solving the 1-D Laplace boundary value problem
  *    -u'' = f,
@@ -60,6 +61,9 @@ int main(int argc, char *argv[]){
         exit(-1);
     }
 
+    timestamp_type t1, t2;
+    get_timestamp(&t1);
+
     double h = 1/(double)N;
 
     double *u;
@@ -90,6 +94,9 @@ int main(int argc, char *argv[]){
         printf("Norm of residual ‖Au[k] - f‖ at iteration %i =  %.8f\n", 
                 iter, norm);
     }
+    get_timestamp(&t2);
+    double elapsed = timestamp_diff_in_seconds(t1, t2);
+    printf("Time elapsed is %f seconds.\n", elapsed);
 
     free(u);
 }
