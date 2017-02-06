@@ -4,7 +4,9 @@
 #include <string.h>
 #include "util.h"
 
-/* A naive numerical solver for solving the 1-D Laplace boundary value problem
+/* Christopher Prince [cmp670@nyu.edu], 2017
+ *
+ * A naive numerical solver for solving the 1-D Laplace boundary value problem
  *    -u'' = f,
  *    u(0) = 0, u(1) = 0
  *    f = 1
@@ -14,7 +16,7 @@
  * with index i in [0, N-1] for N grid points.
  *
  * This establishes N equations expressed in matrix form as:
- *     Au = f
+ *     (N*N)*Au = f  ==>  Au = f/(N*N)
  * with A the NxN tridiagonal matrix with 2's on the main diagonal, 
  * -1's on the adjacent diagonals, and 0's elsewhere.
  * 
@@ -27,10 +29,10 @@
  *
  * $ laplace-iter [N_gridpoints [method [max_iterations [reduction_factor]]]]
  * All options are optional (but must be given in this order), with default arguments
- *   N = 1000
- *   method = "j"
- *   max_iterations = 1000
- *   reduction_factor = 0.0001
+ *     N = 1000
+ *     method = "j"
+ *     max_iterations = 1000
+ *     reduction_factor = 0.0001
  *
  * */
 
@@ -64,8 +66,6 @@ int main(int argc, char *argv[]){
     timestamp_type t1, t2;
     get_timestamp(&t1);
 
-    double h = 1/(double)N;
-
     double *u;
     u = malloc(N * sizeof u);
 
@@ -73,9 +73,8 @@ int main(int argc, char *argv[]){
     for (int i=0; i<N; i++)  u[i] = 0.;
     
     double norm, norm0;
-    
+
     // calculate L2 norm or residual for initial guess
-    // (i.e., a silly way of calculating sqrt (N))
     norm0 = laplace_L2_norm(u, N);
     norm = norm0;
     printf("Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
@@ -91,14 +90,17 @@ int main(int argc, char *argv[]){
         }
 
         norm = laplace_L2_norm(u, N);
-        printf("Norm of residual ‖Au[k] - f‖ at iteration %i =  %.8f\n", 
+        printf("Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
                 iter, norm);
     }
     get_timestamp(&t2);
     double elapsed = timestamp_diff_in_seconds(t1, t2);
     printf("Time elapsed is %f seconds.\n", elapsed);
 
+//    for (int i=0; i<N; i++) printf("%.3f\t", u[i]);
+//    printf("\n");
     free(u);
+    return (1);
 }
 
 double *jacobi_iteration(double *u, int len){
@@ -116,10 +118,10 @@ double *jacobi_iteration(double *u, int len){
     double *uu;
     uu = malloc(len * sizeof uu);     // uu is "updated u"
 
-    uu[0] = 0.5*(1 + u[1]);
+    uu[0] = 0.5*(1/(float)(len*len) + u[1]);
     for (int i=1; i<len-1; i++)
-        uu[i] = 0.5*(1 + u[i-1] + u[i+1]);
-    uu[len-1] = 0.5*(1 + u[len-2]);
+        uu[i] = 0.5*(1/(float)(len*len) + (u[i-1] + u[i+1]));
+    uu[len-1] = 0.5*(1/(float)(len*len) + u[len-2]);
 
     //copy new vector uu into u for next iteration
     for (int i=0; i<len; i++)  u[i]=uu[i];
@@ -144,10 +146,10 @@ double *gs_iteration(double *u, int len){
      * a separate update vector.
      */
 
-    u[0] = 0.5*(1 + u[1]);
+    u[0] = 0.5*(1/(float)(len*len) + u[1]);
     for (int i=1; i<len-1; i++)
-        u[i] = 0.5*(1 + u[i-1] + u[i+1]);
-    u[len-1] = 0.5*(1 + u[len-2]);
+        u[i] = 0.5*(1/(float)(len*len) + (u[i-1] + u[i+1]));
+    u[len-1] = 0.5*(1/(float)(len*len) + u[len-2]);
 
     return u;
 }
@@ -155,11 +157,13 @@ double *gs_iteration(double *u, int len){
 double laplace_L2_norm(double *v, int len){
 
     //Compute sum of squares of elements in Au - f
+    //Note term 1/h^2 (=N^2) in matrix A.
+ 
     double sumsq = 0;
-    sumsq += pow(((2*v[0] - v[1]) - 1), 2);
+    sumsq += pow(((2*v[0] - v[1])*(float)(len*len) - 1), 2);
     for (int i=1; i<len-1; i++)
-        sumsq += pow(((-v[i-1] + 2*v[i] -v[i+1]) - 1), 2);
-    sumsq += pow(((-v[len-2] + 2*v[len-1]) - 1), 2);
+        sumsq += pow(((-v[i-1] + 2*v[i] -v[i+1])*(float)(len*len) - 1), 2);
+    sumsq += pow(((-v[len-2] + 2*v[len-1])*(float)(len*len) - 1), 2);
 
     //The L2 norm is the square root of this sum:
     return sqrt(sumsq);
