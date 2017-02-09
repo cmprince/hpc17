@@ -77,7 +77,7 @@ int main(int argc, char *argv[]){
     // calculate L2 norm or residual for initial guess
     norm0 = laplace_L2_norm(u, N);
     norm = norm0;
-    printf("Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
+    fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
 
     for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
         switch (method[0]){
@@ -90,12 +90,17 @@ int main(int argc, char *argv[]){
         }
 
         norm = laplace_L2_norm(u, N);
-        printf("Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
+        fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
                 iter, norm);
     }
+
     get_timestamp(&t2);
-    double elapsed = timestamp_diff_in_seconds(t1, t2);
-    printf("Time elapsed is %f seconds.\n", elapsed);
+
+    double elapsed_s = timestamp_diff_in_seconds(t1, t2);
+    long elapsed = elapsed_s*1e6;
+    fprintf(stderr, "Time elapsed is %li useconds.\n", elapsed);
+    fprintf(stderr, "Time elapsed is %f seconds.\n", elapsed_s);
+    printf("%li", elapsed);  //is there a better way to do this?
 
 //    for (int i=0; i<N; i++) printf("%.3f\t", u[i]);
 //    printf("\n");
