@@ -1,5 +1,7 @@
 #!/bin/bash
 
+THISHOST=$(hostname -s)
+
 for j in "j" "g"                # jacobi and gauss-seidel
 do
     for opt in {0..3}             # optimization level
@@ -13,7 +15,7 @@ do
             do
                 ((num = $(./laplace-iterO$opt $size $j)))
                 ((result += num))
-                echo $opt $size $i $num >> $j
+                echo $opt $size $i $num >> ${j}_${THISHOST}
             done
         done
     done
