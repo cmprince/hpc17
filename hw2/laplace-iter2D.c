@@ -37,7 +37,7 @@
  * */
 
 double laplace_L2_norm(double **v, int N, int M);
-double **jacobi_iteration(double **u, int N, int M);
+double **jacobi_iteration(double **u, double **uu, int N, int M);
 double **gs_iteration(double **u, int N, int M);
 void swaparray(double ***u, double ***v);
 
@@ -69,16 +69,16 @@ int main(int argc, char *argv[]){
     get_timestamp(&t1);
 
     double **u;
-    u = malloc(N * sizeof *u);
-
     // +2 on N and M to add a boundary
+    u =  malloc((N+2) * sizeof *u);
+
     if (u)
-        for (int i=0; i<M; i++)
-            u[i] = malloc(M* sizeof *u[i]);
+        for (int i=0; i<N+2; i++)
+            u[i] = malloc((M+2)* sizeof *u[i]);
 
     // initialize first estimate = 0
-    for (int i=0; i<N; i++)  
-        for (int j=0; j<M; j++)
+    for (int i=0; i<N+2; i++)  
+        for (int j=0; j<M+2; j++)
             u[i][j] = 0.;
     
     double norm, norm0;
@@ -88,19 +88,41 @@ int main(int argc, char *argv[]){
     norm = norm0;
     fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
 
-    for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-        switch (method[0]){
-            case 'j':
-                u = jacobi_iteration(u, N, M);
-                break;
-            case 'g':
-                u = gs_iteration(u, N, M);
-                break;
-        }
+    switch (method[0]){
+        case 'j':
+            {
+                // +2 on N and M to add a boundary
+                double **uu;
+                uu = malloc((N+2) * sizeof *uu);
+                if (uu)
+                    for (int i=0; i<(N+2); i++)
+                        uu[i] = malloc((M+2)* sizeof *uu[i]);
 
-        norm = laplace_L2_norm(u, N, M);
-        fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
-                iter, norm);
+                for (int i=0; i<N+2; i++)  
+                    for (int j=0; j<M+2; j++)
+                        uu[i][j] = 0.;
+
+                for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
+                    u = jacobi_iteration(u, uu, N, M);
+                    norm = laplace_L2_norm(u, N, M);
+                    fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, norm);
+                }
+
+                for (int i=0; i<(N+2); i++)
+                    free (uu[i]);
+                free(uu);
+
+                break;
+            }
+        case 'g':
+            for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
+                u = gs_iteration(u, N, M);
+                norm = laplace_L2_norm(u, N, M);
+                fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
+                        iter, norm);
+            }
+            break;
+
     }
 
     get_timestamp(&t2);
@@ -113,9 +135,10 @@ int main(int argc, char *argv[]){
 
 //    for (int i=0; i<N; i++) printf("%.3f\t", u[i]);
 //    printf("\n");
-    for (int i=0; i<N; i++)
+
+    for (int i=0; i<N+2; i++)
         free (u[i]);
-    free(u);
+    free (u);
     return (1);
 }
 
@@ -126,7 +149,7 @@ void swaparray(double ***u, double ***v){
     *u = temp;
 }
 
-double **jacobi_iteration(double **u, int N, int M){
+double **jacobi_iteration(double **u, double **uu, int N, int M){
     /* Jacobi iterations:
      * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
      *
@@ -138,12 +161,9 @@ double **jacobi_iteration(double **u, int N, int M){
      * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
      */
 
-    double **uu, **swap;
-    // +2 on N and M to add a boundary
-    uu = malloc(N * sizeof *uu);
-    if (uu)
-        for (int i=0; i<M; i++)
-            uu[i] = malloc(M* sizeof *u[i]);
+    //double **uu;
+    //double **swap;
+    
 
     for (int i=1; i<N-1; i++)
         for (int j=1; j<M-1; j++)
@@ -160,13 +180,9 @@ double **jacobi_iteration(double **u, int N, int M){
     //u=uu;
     //uu=swap;
 
-    swaparray(&u, &uu);
+//    swaparray(&u, &uu);
 
-    for (int i=0; i<N; i++)
-        free (uu[i]);
-    free(uu);
-
-    return u;
+    return uu;
 }
 
 double **gs_iteration(double **u, int N, int M){
