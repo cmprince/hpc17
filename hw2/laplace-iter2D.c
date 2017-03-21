@@ -39,6 +39,7 @@
 double laplace_L2_norm(double **v, int N, int M);
 double **jacobi_iteration(double **u, int N, int M);
 double **gs_iteration(double **u, int N, int M);
+void swaparray(double ***u, double ***v);
 
 int main(int argc, char *argv[]){
 
@@ -118,6 +119,13 @@ int main(int argc, char *argv[]){
     return (1);
 }
 
+void swaparray(double ***u, double ***v){
+    // Swap 2 2-D arrays of doubles by reference
+    double **temp = *v;
+    *v = *u;
+    *u = temp;
+}
+
 double **jacobi_iteration(double **u, int N, int M){
     /* Jacobi iterations:
      * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
@@ -148,9 +156,11 @@ double **jacobi_iteration(double **u, int N, int M){
     //    for (int j=0; j<M; j++)
     //        u[i][j]=uu[i][j];
    
-    swap=&uu;
-    u=&swap;
-    swap=&u;
+    //swap=uu;
+    //u=uu;
+    //uu=swap;
+
+    swaparray(&u, &uu);
 
     for (int i=0; i<N; i++)
         free (uu[i]);
