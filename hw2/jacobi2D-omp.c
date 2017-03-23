@@ -39,7 +39,6 @@
 
 void laplace_L2_norm(double ***v, int N, int M, double *l2);
 void jacobi_iteration(double ***u, double ***uu, int N, int M);
-double **gs_iteration(double **u, int N, int M);
 void swaparray(double ***u, double ***v);
 
 double l2, sumsq;
@@ -48,25 +47,17 @@ int main(int argc, char *argv[]){
 
     int N = 100;
     int M = 100;
-    char method[] = "j";
     int max_iter = 1000;
     double term_factor = 0.0001;
     char *end;                      //dummy pointer for strtoX()
 
     // This argument parser is not particularly robust...
-    if (argc > 4)
-        term_factor = strtod(argv[4], &end);
     if (argc > 3)
-        max_iter = atoi(argv[3]);
+        term_factor = strtod(argv[3], &end);
     if (argc > 2)
-        strncpy(method, argv[2], 1);
+        max_iter = atoi(argv[2]);
     if (argc > 1)
         N = M = atoi(argv[1]);
-
-    if (method[0] != 'j' && method[0] != 'g'){
-        fprintf(stderr, "Only valid methods are jacobi and gauss-seidel!\n");
-        exit(-1);
-    }
 
     timestamp_type t1, t2;
     get_timestamp(&t1);
@@ -91,44 +82,29 @@ int main(int argc, char *argv[]){
     norm0 = l2;
     fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
     norm = norm0;
-    switch (method[0]){
-        case 'j':
-            {
-                // +2 on N and M to add a boundary
-                double **uu;
-                uu = malloc((N+2) * sizeof *uu);
-                if (uu)
-                    for (int i=0; i<(N+2); i++)
-                        uu[i] = malloc((M+2)* sizeof *uu[i]);
 
-                for (int i=0; i<N+2; i++)  
-                    for (int j=0; j<M+2; j++)
-                        uu[i][j] = 0.;
+    // +2 on N and M to add a boundary
+    double **uu;
+    uu = malloc((N+2) * sizeof *uu);
+    if (uu)
+        for (int i=0; i<(N+2); i++)
+            uu[i] = malloc((M+2)* sizeof *uu[i]);
 
-                for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-                    jacobi_iteration(&u, &uu, N, M);
-                    swaparray(&u, &uu);
-                    laplace_L2_norm(&u, N, M, &l2);
-                    if (!(iter%100))
-                        fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, l2);
-                }
+    for (int i=0; i<N+2; i++)  
+        for (int j=0; j<M+2; j++)
+            uu[i][j] = 0.;
 
-                for (int i=0; i<(N+2); i++)
-                    free (uu[i]);
-                free(uu);
-
-                break;
-            }
-        case 'g':
-            for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-                u = gs_iteration(u, N, M);
-                laplace_L2_norm(&u, N, M, &l2);
-                fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
-                        iter, norm);
-            }
-            break;
-
+    for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
+        jacobi_iteration(&u, &uu, N, M);
+        swaparray(&u, &uu);
+        laplace_L2_norm(&u, N, M, &l2);
+        if (!(iter%100))
+            fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, l2);
     }
+
+    for (int i=0; i<(N+2); i++)
+        free (uu[i]);
+    free(uu);
 
     get_timestamp(&t2);
 
@@ -138,6 +114,10 @@ int main(int argc, char *argv[]){
     fprintf(stderr, "Time elapsed is %f seconds.\n", elapsed_s);
     printf("%li", elapsed);  //is there a better way to do this?
 
+// I seem to have problems freeing the first array, probably because I'm swapping the
+// pointers with reckless abandon. We're at the end of the program, so we're pretty
+// safe ignoring it and letting the OS reclaim the memory at exit.
+//
 //    for (int i=0; i<N+2; i++)
 //        free (u[i]);
 //    free (u);
@@ -170,29 +150,6 @@ void jacobi_iteration(double ***u, double ***uu, int N, int M){
                         (*u)[i][j-1] + (*u)[i][j+1]));
 }
 
-double **gs_iteration(double **u, int N, int M){
-    /* Gauss-Seidel iterations:
-     * u_i[k+1] = 1/a_ii (f_i - (sum(a_ij*u_j[k+1]; j < i) + sum(a_ij*u_j[k]; j > i))
-     *
-     * With
-     * a_ij = 2, i=j
-     * a_ij = -1, (i-j)^2 = 1
-     * a_ij = 0 otherwise
-     * 
-     * ==> u_i[k+1] = 1/2 (f_i + uu_(i-1)[k] + u_(i+1)[k])
-     * 
-     * This can be updated in-place, so we don't need to create 
-     * a separate update vector.
-     */
-
-    for (int i=1; i<N+1; i++)
-        for (int j=1; j<M+1; j++)
-            u[i][j] = 0.25*(1/(float)(N*M) + (u[i-1][j] + u[i+1][j] +
-                        u[i][j-1] + u[i][j+1]));
-
-    return u;
-}
-
 void laplace_L2_norm(double ***v, int N, int M, double *l2){
 
     //Compute sum of squares of elements in Au - f
@@ -202,7 +159,7 @@ void laplace_L2_norm(double ***v, int N, int M, double *l2){
     double d;
     sumsq=0.;
 
-#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
+//#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
     for (i=1; i<N+1; i++)
         for (j=1; j<M+1; j++){
             d = ((-(*v)[i-1][j] - (*v)[i+1][j] - (*v)[i][j-1] - (*v)[i][j+1] + 4*(*v)[i][j])*(float)(N*M) - 1);
