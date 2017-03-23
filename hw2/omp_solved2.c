@@ -15,7 +15,12 @@ int nthreads, i, tid;
 float total;
 
 /*** Spawn parallel region ***/
-#pragma omp parallel 
+
+/****************************************
+ * tid needs to be private, total shared
+ */ 
+
+#pragma omp parallel private(tid) shared(total)
   {
   /* Obtain thread number */
   tid = omp_get_thread_num();
@@ -23,28 +28,23 @@ float total;
   if (tid == 0) {
     nthreads = omp_get_num_threads();
     printf("Number of threads = %d\n", nthreads);
-    total = 0.0;
     }
   printf("Thread %d is starting...\n",tid);
 
   #pragma omp barrier
 
   /* do some work */
-//  total = 0.0;
 
 /***********************************************
  * The update to total below is a data race!
  * Adding a reduction clause fixes this.
- * original:
- * #pragma omp for schedule(dynamic,10)
- * fixed:
  */
-  } /*** End of parallel region ***/
-  #pragma omp for schedule(dynamic,10) // reduction(+: total)
+
+  total = 0.0;
+  #pragma omp parallel for reduction(+: total) private(i)
   for (i=0; i<1000000; i++) 
-#pragma omp atomic
-     total = total + i*1.0;
-#pragma omp barrier
+     total += i*1.0;
   printf ("Thread %d is done! Total= %e\n",tid,total);
 
+  } /*** End of parallel region ***/
 }
