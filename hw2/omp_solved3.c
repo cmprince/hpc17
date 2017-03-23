@@ -86,7 +86,7 @@ void print_results(float array[N], int tid, int section)
   /****************
    * This extra barrier below causes the program to hang:
    * Since not all of the threads execute the print_results function,
-   * the not all of the threads can get here.
+   * not all of the threads can get here.
    * **************/
 
   //#pragma omp barrier
