@@ -1,9 +1,10 @@
-PROGRAM = laplace-iter
+FLAGS = -fopenmp -lm -lrt -Wall
+TARGETS = omp_solved2 omp_solved3 omp_solved4 omp_solved5 omp_solved6 jacobi2D-omp gs2D-omp
 
-all:
-	for i in 0 1 2 3 ; do \
-		$(CC) -o $(PROGRAM)O$$i -std=gnu99 $(PROGRAM).c -lm -lrt -Wall -O$$i; \
-	done
+all: $(TARGETS) 
+
+%: %.c
+	$(CC) -o $@ $< $(FLAGS)
 
 clean:
-	find -not -name "*.[ch]" -not -name "makefile" -type f -rm
+	rm $(TARGETS)
