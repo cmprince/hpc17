@@ -13,34 +13,41 @@
 
 float a[VECLEN], b[VECLEN];
 
-float dotprod ()
+/********************************
+ * The simplest fix is to make the variable to be passed between \
+ * functions global and remove the local declarations.
+ * ******************************/
+float sum;
+
+/*******************************
+ * Note that there is no return value from this function, so this 
+ * should be a void type declaration. The sum variable is updated 
+ * directly by the function.
+ * *****************************/
+//float dotprod ()
+void dotprod ()
 {
 int i,tid;
-float sum= 0.0;
 
-
-#pragma omp parallel for reduction(+:sum)
+tid = omp_get_thread_num();
+#pragma omp for reduction(+:sum)
   for (i=0; i < VECLEN; i++)
     {
-    //How to avoid repeated calls to this omp function?
-    tid = omp_get_thread_num();
     sum = sum + (a[i]*b[i]);
     printf("  tid= %d i=%d\n",tid,i);
     }
-  return sum;
 }
 
 
 int main (int argc, char *argv[]) {
 int i;
-float sum;
 
 for (i=0; i < VECLEN; i++)
   a[i] = b[i] = 1.0 * i;
-//sum = 0.0;
+sum = 0.0;
 
-//#pragma omp parallel shared(sum)
-  sum = dotprod();
+#pragma omp parallel shared(sum)
+  dotprod();
 
 printf("Sum = %f\n",sum);
 
