@@ -37,10 +37,12 @@
  *
  * */
 
-double laplace_L2_norm(double **v, int N, int M);
-double **jacobi_iteration(double **u, double **uu, int N, int M);
+void laplace_L2_norm(double ***v, int N, int M, double *l2);
+void jacobi_iteration(double ***u, double ***uu, int N, int M);
 double **gs_iteration(double **u, int N, int M);
 void swaparray(double ***u, double ***v);
+
+double l2, sumsq;
 
 int main(int argc, char *argv[]){
 
@@ -85,10 +87,10 @@ int main(int argc, char *argv[]){
     double norm, norm0;
 
     // calculate L2 norm or residual for initial guess
-    norm0 = laplace_L2_norm(u, N, M);
-    norm = norm0;
+    laplace_L2_norm(&u, N, M, &l2);
+    norm0 = l2;
     fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
-
+    norm = norm0;
     switch (method[0]){
         case 'j':
             {
@@ -104,9 +106,11 @@ int main(int argc, char *argv[]){
                         uu[i][j] = 0.;
 
                 for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-                    u = jacobi_iteration(u, uu, N, M);
-                    norm = laplace_L2_norm(u, N, M);
-                    fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, norm);
+                    jacobi_iteration(&u, &uu, N, M);
+                    swaparray(&u, &uu);
+                    laplace_L2_norm(&u, N, M, &l2);
+                    if (!(iter%100))
+                        fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, l2);
                 }
 
                 for (int i=0; i<(N+2); i++)
@@ -118,7 +122,7 @@ int main(int argc, char *argv[]){
         case 'g':
             for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
                 u = gs_iteration(u, N, M);
-                norm = laplace_L2_norm(u, N, M);
+                laplace_L2_norm(&u, N, M, &l2);
                 fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", 
                         iter, norm);
             }
@@ -147,7 +151,7 @@ void swaparray(double ***u, double ***v){
     *u = temp;
 }
 
-double **jacobi_iteration(double **u, double **uu, int N, int M){
+void jacobi_iteration(double ***u, double ***uu, int N, int M){
     /* Jacobi iterations:
      * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
      *
@@ -159,15 +163,11 @@ double **jacobi_iteration(double **u, double **uu, int N, int M){
      * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
      */
     int i, j;
-#pragma omp parallel shared(u, uu, M, N) private (i, j)
-    {
-#pragma omp for
+#pragma omp parallel for shared(u, uu, M, N) private (i, j)
     for (i=1; i<N+1; i++)
         for (j=1; j<M+1; j++)
-            uu[i][j] = 0.25*(1/(float)(N*M) + (u[i-1][j] + u[i+1][j] + 
-                        u[i][j-1] + u[i][j+1]));
-}
-    return uu;
+            (*uu)[i][j] = 0.25*(1/(float)(N*M) + ((*u)[i-1][j] + (*u)[i+1][j] + \
+                        (*u)[i][j-1] + (*u)[i][j+1]));
 }
 
 double **gs_iteration(double **u, int N, int M){
@@ -193,17 +193,22 @@ double **gs_iteration(double **u, int N, int M){
     return u;
 }
 
-double laplace_L2_norm(double **v, int N, int M){
+void laplace_L2_norm(double ***v, int N, int M, double *l2){
 
     //Compute sum of squares of elements in Au - f
     //Note term 1/h^2 (=N^2) in matrix A.
  
-    double sumsq = 0;
-    for (int i=1; i<N+1; i++)
-        for (int j=1; j<M+1; j++)
-            sumsq += pow(((-v[i-1][j] - v[i+1][j] - v[i][j-1] - v[i][j+1]
-                            + 4*v[i][j])*(float)(N*M) - 1), 2);
+    int i, j;
+    double d;
+    sumsq=0.;
+
+#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
+    for (i=1; i<N+1; i++)
+        for (j=1; j<M+1; j++){
+            d = ((-(*v)[i-1][j] - (*v)[i+1][j] - (*v)[i][j-1] - (*v)[i][j+1] + 4*(*v)[i][j])*(float)(N*M) - 1);
+            sumsq += d*d;
+        }
     //The L2 norm is the square root of this sum:
     //
-    return sqrt(sumsq);
+    *l2 = sqrt(sumsq);
 }
