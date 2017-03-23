@@ -45,12 +45,15 @@ omp_init_lock(&lockb);
       omp_set_lock(&locka);
       for (i=0; i<N; i++)
         a[i] = i * DELTA;
+      /**********************
+       * no need to keep the lock set; we are done updating a
+       * ********************/
+      omp_unset_lock(&locka);
       omp_set_lock(&lockb);
       printf("Thread %d adding a[] to b[]\n",tid);
       for (i=0; i<N; i++)
         b[i] += a[i];
       omp_unset_lock(&lockb);
-      omp_unset_lock(&locka);
       }
 
     #pragma omp section
@@ -59,12 +62,15 @@ omp_init_lock(&lockb);
       omp_set_lock(&lockb);
       for (i=0; i<N; i++)
         b[i] = i * PI;
+      /**********************
+       * same here; we're done updating b so unset the lock right away
+       * ********************/
+      omp_unset_lock(&lockb);
       omp_set_lock(&locka);
       printf("Thread %d adding b[] to a[]\n",tid);
       for (i=0; i<N; i++)
         a[i] += b[i];
       omp_unset_lock(&locka);
-      omp_unset_lock(&lockb);
       }
     }  /* end of sections */
   }  /* end of parallel region */
