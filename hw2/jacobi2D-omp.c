@@ -159,7 +159,7 @@ void laplace_L2_norm(double ***v, int N, int M, double *l2){
     double d;
     sumsq=0.;
 
-//#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
+#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
     for (i=1; i<N+1; i++)
         for (j=1; j<M+1; j++){
             d = ((-(*v)[i-1][j] - (*v)[i+1][j] - (*v)[i][j-1] - (*v)[i][j+1] + 4*(*v)[i][j])*(float)(N*M) - 1);
