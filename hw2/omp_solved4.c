@@ -19,8 +19,8 @@ int nthreads, tid, i, j;
 
 double a[N][N];
  
- * But we can't malloc here, because the malloc only allocated memory blocks
- * in the serial (that is, not parallel) scope. So Let's do it in the
+ * But we can't malloc here, because the malloc only allocates memory blocks
+ * in the serial (that is, not parallel) scope. So let's do it in the
  * parallel region instead:
  * *************/
 
@@ -29,12 +29,14 @@ double a[N][N];
 #pragma omp parallel shared(nthreads) private(i,j,tid) //,a)
   {
 
-      // Do the malloc here (**a to use double indexing)
+// Do the malloc here (**a to use double indexing)
 double **a;
 a = malloc(N * sizeof *a);
 
+// Now every thread has its own privately malloc'd space for a[].
+
 if (a)
-    for (int i = 0; i<N; i++)
+    for (i = 0; i<N; i++)
         a[i] = malloc(N * sizeof *a[i]);
 
 /* Obtain/print thread info */
@@ -54,9 +56,10 @@ if (a)
   /* For confirmation */
   printf("Thread %d done. Last element= %f\n",tid,a[N-1][N-1]);
 
-  //Free our memory from the heap.
+  //Free our memory from the heap. Need to do this in the parallel region
+  //so that each thread takes care of its own private storage.
   
-  for (int i = 0; i<N; i++) 
+  for (i = 0; i<N; i++) 
       free (a[i]);
   free (a);
   }  /* All threads join master thread and disband */
