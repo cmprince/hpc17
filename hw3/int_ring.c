@@ -16,9 +16,9 @@ int main( int argc, char *argv[])
     gethostname(hostname, 1024);
  
     if (argc!=2){
-        printf("Usage: mpirun -np n %s R\n"
+        printf("Usage: mpirun -np R %s n\n"
                "    R: number of processes\n"
-               "    N: number of loops of the MPI ring.\n", argv[0]);
+               "    n: number of loops of the MPI ring.\n", argv[0]);
         exit(0);
     }
     else
