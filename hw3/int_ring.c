@@ -6,10 +6,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "mpi.h"
+#include "util.h"
 
 int main( int argc, char *argv[])
 {
     int rank, R, N, tag, origin, destination;
+    
     MPI_Status status;
   
     char hostname[1024];
@@ -23,6 +25,9 @@ int main( int argc, char *argv[])
     }
     else
         N = atoi(argv[1]);
+    
+    timestamp_type time1, time2;
+    get_timestamp(&time1);
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -40,7 +45,7 @@ int main( int argc, char *argv[])
         {
             origin = ((rank-1)%R) >= 0 ? ((rank-1)%R) : ((rank-1)%R)+R;
             MPI_Recv(&message_in,  1, MPI_INT, origin, tag, MPI_COMM_WORLD, &status);
-            printf("rank %d hosted on %s received from %d the message %d\n", rank, hostname, origin, message_in);
+//            printf("rank %d hosted on %s received from %d the message %d\n", rank, hostname, origin, message_in);
 //            counter += message_in;
         }
         counter = message_in + rank;
@@ -52,5 +57,16 @@ int main( int argc, char *argv[])
     }
   
     MPI_Finalize();
+    get_timestamp(&time2);                                                                  
+
+    if (rank==R-1){
+        double elapsed = timestamp_diff_in_seconds(time1,time2);
+        printf("Time elapsed is %f seconds.\n", elapsed);
+    }
+    //printf("Inner product is %f.\n", prod);
+  
+    //printf("%f GB/s\n", 4*n*sizeof(double)*passes/1e9/elapsed/skip);
+    //printf("%f GFlops/s\n", 2*n*passes/1e9/elapsed/skip);
+
     return 0;
 }
