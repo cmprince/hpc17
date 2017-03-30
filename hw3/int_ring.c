@@ -58,15 +58,16 @@ int main( int argc, char *argv[])
   
     MPI_Finalize();
     get_timestamp(&time2);                                                                  
-
+    double elapsed = timestamp_diff_in_seconds(time1,time2);
+    
     if (rank==R-1){
-        double elapsed = timestamp_diff_in_seconds(time1,time2);
         printf("Time elapsed is %f seconds.\n", elapsed);
+        printf("%f ns latency\n", elapsed*1e9/(float)(N*R-2));
     }
     //printf("Inner product is %f.\n", prod);
   
+
     //printf("%f GB/s\n", 4*n*sizeof(double)*passes/1e9/elapsed/skip);
-    //printf("%f GFlops/s\n", 2*n*passes/1e9/elapsed/skip);
 
     return 0;
 }
