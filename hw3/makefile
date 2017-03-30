@@ -1,5 +1,5 @@
 FLAGS = -std=gnu99 -lm -lrt -Wall -g
-TARGETS = int_ring
+TARGETS = int_ring array_ring
 
 all: $(TARGETS) 
 
