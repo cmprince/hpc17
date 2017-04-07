@@ -69,6 +69,7 @@ if (taskid == MASTER){
       MPI_COMM_WORLD, &status);
     }
 
+  //All processes need to see the reduce operation, including the Master!
   MPI_Reduce(&mysum, &sum, 1, MPI_FLOAT, MPI_SUM, MASTER, MPI_COMM_WORLD);
 
   /* Get final sum and print sample results */  
