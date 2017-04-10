@@ -9,17 +9,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include "util.h"
 #include "mpi.h"
 
-double L2_res(double ***lu, int lN);
+double L2_res(double ***lu, int lN, int x0, int y0, int s);
 void swaparray(double ***u, double ***v);
-void jacobi_iteration(double ***u, double ***uu, int lN);
+void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s);
 
-double L2_res(double ***lu, int lN, int x0, int y0){
+double L2_res(double ***lu, int lN, int x0, int y0, int s){
     //Compute sum of squares of elements in Au - f
     //Note term 1/h^2 (=N^2) in matrix A.
     
+    int N = lN * s;
     int i, j;
     double tmp, sumsq=0.0, gres2=0.0;
 
@@ -53,8 +57,10 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
      * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
      */
 
+    int N = lN * s;
     int i, j;
     double *vec_in, *vec_out;
+    MPI_Status *status[4];
     vec_in = malloc(lN * sizeof(vec_in));
     vec_out = malloc(lN * sizeof(vec_out));
 
@@ -69,8 +75,13 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
     if (x0>0){
         for (i=0; i<lN; i++)
             vec_out[i] = (*u)[i+1][1];
-        MPI_Send(vec_out[0], lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD);
-        MPI_Recv(vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD);
+        MPI_Sendrecv(&vec_out[0], lN, MPI_DOUBLE, y0*s + x0 -1, 99,
+                     &vec_in[0] , lN, MPI_DOUBLE, y0*s + x0 -1, 100,
+                     MPI_COMM_WORLD, status[1]);
+
+//        MPI_Send(&vec_out[0], lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD);
+  //      MPI_Recv(&vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD, status[1]);
+        printf("LEFT:x0=%i,y0=%i,s=%i\n", x0, y0, s);
         for (i=0; i<lN; i++)
             (*u)[i+1][0] = vec_in[i];
 
@@ -81,11 +92,12 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
     //Right direction: x0 < s
     if (x0<(s-1)){
         for (i=0; i<lN; i++)
-            vec_out[i] = u[i+1][lN];
-        MPI_Send(vec_out[0], lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD);
-        MPI_Recv(vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD);
+            vec_out[i] = (*u)[i+1][lN];
+        MPI_Send(&vec_out[0], lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD);
+        MPI_Recv(&vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD, status[2]);
+        printf("RIGHT:x0=%i,y0=%i,s=%i\n", x0, y0, s);
         for (i=0; i<lN; i++)
-            u[i+1][lN+1] = vec_in[i];
+            (*u)[i+1][lN+1] = vec_in[i];
         
         for (i=1; i<lN+1; i++)
             (*uu)[i][lN] = 0.25*(1/(float)(N*N) + ((*u)[i-1][lN] + (*u)[i+1][lN] + \
@@ -93,8 +105,9 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
     }
     //Up direction: y0 > 0
     if (y0>0){
-        MPI_Send(*u[1][1],    lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
-        MPI_Recv(*u[lN+1][1], lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Send(u[1][1],    lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Recv(u[lN+1][1], lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD, status[3]);
+        printf("UP:x0=%i,y0=%i,s=%i\n", x0, y0, s);
         
         for (i=1; i<lN+1; i++)
             (*uu)[1][i] = 0.25*(1/(float)(N*N) + ((*u)[1][i-1] + (*u)[1][i+1] + \
@@ -102,22 +115,27 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
     }
     //Down direction: y0 < s
     if (y0<(s-1)){
-        MPI_Send(*u[1][1],    lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
-        MPI_Recv(*u[lN+1][1], lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Send(u[1][1],    lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Recv(u[lN+1][1], lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD, status[0]);
+        printf("DOWN:x0=%i,y0=%i,s=%i\n", x0, y0, s);
         
         for (i=1; i<lN+1; i++)
             (*uu)[lN][i] = 0.25*(1/(float)(N*N) + ((*u)[lN][i-1] + (*u)[lN][i+1] + \
                         (*u)[lN-1][i] + (*u)[lN+1][i]));
     }
+
+    free (vec_in);
+    free (vec_out);
 }
 
 int main (int argc, char *argv[]){
-    int  r, p       //rank, numprocesses
-         i, j,      //iterators
-         N, lN,     //side length, submatrix side length
-         iter, max_iter;
-    int  numtasks, taskid, len, buffer, root, count;
-    char hostname[MPI_MAX_PROCESSOR_NAME];
+    int    r, p,       //rank, numprocesses
+           i, j,      //iterators
+           N, lN,     //side length, submatrix side length
+           iter, max_iter;
+    int    numtasks, taskid, len, buffer, root, count;
+    double l2, term_factor=0.1;
+    char   hostname[MPI_MAX_PROCESSOR_NAME];
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
@@ -125,26 +143,40 @@ int main (int argc, char *argv[]){
     MPI_Get_processor_name(hostname, &len);
     root = 0;
 
-    sscanf(argv[1], "%d", &N);
-    sscanf(argv[2], "%d", &max_iter);
+    //debug loop, attach with gdb --pid <number>
+    if(999999==r)
+    {
+        int i = 0;
+        char hostname[256];
+        gethostname(hostname, sizeof(hostname));
+        printf("PID %d on %s ready for attach\n", getpid(), hostname);
+        fflush(stdout);
+        while (0 == i)
+            sleep(5);
+    }
 
+//    sscanf(argv[1], "%i", &N);
+//    sscanf(argv[2], "%i", &max_iter);
+    if (0==r){
+    N = atoi(argv[1]);
+    max_iter = atoi(argv[2]);
+    }
     //Check to see if the parameters are OK for our simplified assumptions
     //First: is the number of processes a square?
     int s = (int)sqrt(p);   //s = side
-    if (s*s <> p){
+    if (s*s != p){
         printf("Exiting. Number of processes must be a perfect square.\n");
         MPI_Abort(MPI_COMM_WORLD, 0);
     }
 
     //Second: is the side length divisible by sqrt(p)?
-    if ((N % s != 0) && mpirank == 0 ) {
+    if ((N % s != 0) && r == 0 ) {
         printf("N: %d, local N: %d\n", N, lN);
         printf("Exiting. N must be a multiple of p\n");
         MPI_Abort(MPI_COMM_WORLD, 0);
     }
     else
         lN = N / s;
-
     /* timing */
     MPI_Barrier(MPI_COMM_WORLD);
     timestamp_type time1, time2;
@@ -184,8 +216,8 @@ int main (int argc, char *argv[]){
             u[i] = malloc((lN+2)* sizeof *u[i]);
 
     // initialize first estimate = 0
-    for (int i=0; i<N+2; i++)  
-        for (int j=0; j<M+2; j++)
+    for (int i=0; i<lN+2; i++)  
+        for (int j=0; j<lN+2; j++)
             u[i][j] = 0.;
     
     double norm, norm0;
@@ -194,7 +226,7 @@ int main (int argc, char *argv[]){
     int y0 = r/s;
 
     // calculate L2 norm or residual for initial guess
-    laplace_L2_norm(&u, lN, x0, y0);
+    l2 = L2_res(&u, lN, x0, y0, s);
     norm0 = l2;
     fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
     norm = norm0;
@@ -213,7 +245,7 @@ int main (int argc, char *argv[]){
     for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
         jacobi_iteration(&u, &uu, lN, x0, y0, s);
         swaparray(&u, &uu);
-        laplace_L2_norm(&u, N, M, &l2);
+        l2 = L2_res(&u, lN, x0, y0, s);
         if (!(iter%100))
             fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, l2);
     }
