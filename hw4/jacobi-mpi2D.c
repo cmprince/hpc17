@@ -26,7 +26,7 @@ double L2_res(double ***lu, int lN, int x0, int y0){
     for (i=x0+1; i<x0+lN+1; i++){
         for (j=y0+1; j<y0+lN+1; j++){
             sumsq += pow(((-(*lu)[i-1][j] -(*lu)[i+1][j] - (*lu)[i][j-1] - (*lu)[i][j+1]
-                            + 4*(*lu)[i][j])*(float)(lN*lN) - 1), 2);
+                            + 4*(*lu)[i][j])*(float)(N*N) - 1), 2);
         }
     }
 
@@ -41,7 +41,7 @@ void swaparray(double ***u, double ***v){
     *u = temp;
 }
 
-void jacobi_iteration(double ***u, double ***uu, int lN){
+void jacobi_iteration(double ***u, double ***uu, int lN, int x0, int y0, int s){
     /* Jacobi iterations:
      * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
      *
@@ -52,11 +52,63 @@ void jacobi_iteration(double ***u, double ***uu, int lN){
      * 
      * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
      */
+
     int i, j;
-    for (i=1; i<N+1; i++)
-        for (j=1; j<M+1; j++)
-            (*uu)[i][j] = 0.25*(1/(float)(N*M) + ((*u)[i-1][j] + (*u)[i+1][j] + \
+    double *vec_in, *vec_out;
+    vec_in = malloc(lN * sizeof(vec_in));
+    vec_out = malloc(lN * sizeof(vec_out));
+
+    //Compute interior points
+    for (i=2; i<lN; i++)
+        for (j=2; j<lN; j++)
+            (*uu)[i][j] = 0.25*(1/(float)(N*N) + ((*u)[i-1][j] + (*u)[i+1][j] + \
                         (*u)[i][j-1] + (*u)[i][j+1]));
+
+    //Communicate ghost vectors and update the border
+    //Left direction: x0 > 0
+    if (x0>0){
+        for (i=0; i<lN; i++)
+            vec_out[i] = (*u)[i+1][1];
+        MPI_Send(vec_out[0], lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD);
+        MPI_Recv(vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD);
+        for (i=0; i<lN; i++)
+            (*u)[i+1][0] = vec_in[i];
+
+        for (i=1; i<lN+1; i++)
+            (*uu)[i][1] = 0.25*(1/(float)(N*N) + ((*u)[i-1][1] + (*u)[i+1][1] + \
+                        (*u)[i][0] + (*u)[i][2]));
+    }
+    //Right direction: x0 < s
+    if (x0<(s-1)){
+        for (i=0; i<lN; i++)
+            vec_out[i] = u[i+1][lN];
+        MPI_Send(vec_out[0], lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD);
+        MPI_Recv(vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD);
+        for (i=0; i<lN; i++)
+            u[i+1][lN+1] = vec_in[i];
+        
+        for (i=1; i<lN+1; i++)
+            (*uu)[i][lN] = 0.25*(1/(float)(N*N) + ((*u)[i-1][lN] + (*u)[i+1][lN] + \
+                        (*u)[i][lN-1] + (*u)[i][lN+1]));
+    }
+    //Up direction: y0 > 0
+    if (y0>0){
+        MPI_Send(*u[1][1],    lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Recv(*u[lN+1][1], lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
+        
+        for (i=1; i<lN+1; i++)
+            (*uu)[1][i] = 0.25*(1/(float)(N*N) + ((*u)[1][i-1] + (*u)[1][i+1] + \
+                        (*u)[0][i] + (*u)[2][i]));
+    }
+    //Down direction: y0 < s
+    if (y0<(s-1)){
+        MPI_Send(*u[1][1],    lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Recv(*u[lN+1][1], lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
+        
+        for (i=1; i<lN+1; i++)
+            (*uu)[lN][i] = 0.25*(1/(float)(N*N) + ((*u)[lN][i-1] + (*u)[lN][i+1] + \
+                        (*u)[lN-1][i] + (*u)[lN+1][i]));
+    }
 }
 
 int main (int argc, char *argv[]){
@@ -112,25 +164,24 @@ int main (int argc, char *argv[]){
     //All tasks reduce 
     //Repeat!
     //
-    //  p0      p1      p2      ...     p[N-1]
-    //  pN      pN+1    pN+2    ...     p[2N-1]
-    //  p2N     p2N+1   p2N+2   ...     p[3N-1]
+    //  p0      p1      p2      ...     p[s-1]
+    //  ps      ps+1    ps+2    ...     p[2s-1]
+    //  p2s     p2s+1   p2s+2   ...     p[3s-1]
     //  ...     ...     ...     ...     ...
-    //  pN(N-1) ...     ...     ...     p[N*N-1]
+    //  ps(s-1) ...     ...     ...     p[s*s-1]
     //
-    //  ==>  x0=p/N, y0=p%N
+    //  ==>  x0 = r%s, y0 = r/s
 
     timestamp_type t1, t2;
     get_timestamp(&t1);
 
-    if (0==r){
     double **u;
-    // +2 on N and M to add a boundary
-    u =  malloc((N+2) * sizeof *u);
+    // +2 on lN to add a boundary
+    u =  malloc((lN+2) * sizeof *u);
 
     if (u)
         for (int i=0; i<N+2; i++)
-            u[i] = malloc((M+2)* sizeof *u[i]);
+            u[i] = malloc((lN+2)* sizeof *u[i]);
 
     // initialize first estimate = 0
     for (int i=0; i<N+2; i++)  
@@ -139,25 +190,28 @@ int main (int argc, char *argv[]){
     
     double norm, norm0;
 
+    int x0 = r%s;
+    int y0 = r/s;
+
     // calculate L2 norm or residual for initial guess
-    laplace_L2_norm(&u, N, M, &l2);
+    laplace_L2_norm(&u, lN, x0, y0);
     norm0 = l2;
     fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
     norm = norm0;
 
-    // +2 on N and M to add a boundary
+    // +2 on lN to add a boundary
     double **uu;
-    uu = malloc((N+2) * sizeof *uu);
+    uu = malloc((lN+2) * sizeof *uu);
     if (uu)
-        for (int i=0; i<(N+2); i++)
-            uu[i] = malloc((M+2)* sizeof *uu[i]);
+        for (int i=0; i<(lN+2); i++)
+            uu[i] = malloc((lN+2)* sizeof *uu[i]);
 
-    for (int i=0; i<N+2; i++)  
-        for (int j=0; j<M+2; j++)
+    for (int i=0; i<lN+2; i++)  
+        for (int j=0; j<lN+2; j++)
             uu[i][j] = 0.;
 
     for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-        jacobi_iteration(&u, &uu, N, M);
+        jacobi_iteration(&u, &uu, lN, x0, y0, s);
         swaparray(&u, &uu);
         laplace_L2_norm(&u, N, M, &l2);
         if (!(iter%100))
@@ -175,3 +229,5 @@ int main (int argc, char *argv[]){
     fprintf(stderr, "Time elapsed is %li useconds.\n", elapsed);
     fprintf(stderr, "Time elapsed is %f seconds.\n", elapsed_s);
     printf("%li", elapsed);  //is there a better way to do this?
+    }
+
