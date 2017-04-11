@@ -15,22 +15,22 @@
 #include "util.h"
 #include <mpi.h>
 
-double L2_res(double ***lu, int lN, int x0, int y0, int s);
+double L2_res(double ***lu, int lN, int s);
 void swaparray(double ***u, double ***v);
 void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, int s);
 
-double L2_res(double ***lu, int lN, int x0, int y0, int s){
+double L2_res(double ***lu, int lN, int s){
     //Compute sum of squares of elements in Au - f
     //Note term 1/h^2 (=N^2) in matrix A.
     
     int N = lN * s;
     int i, j;
-    double tmp, sumsq=0.0, gres2=0.0;
-
+    double d, sumsq=0.0, gres2=0.0;
+    
     for (i=1; i<lN+1; i++){
         for (j=1; j<lN+1; j++){
-            sumsq += pow(((-(*lu)[i-1][j] -(*lu)[i+1][j] - (*lu)[i][j-1] - (*lu)[i][j+1]
-                            + 4*(*lu)[i][j])*(float)(N*N) - 1), 2);
+            d = (-(*lu)[i-1][j] -(*lu)[i+1][j] -(*lu)[i][j-1] -(*lu)[i][j+1] + 4*(*lu)[i][j] ) *(double)(N*N) - 1;
+            sumsq += d*d;
         }
     }
 
@@ -72,6 +72,8 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
 
     //Communicate ghost vectors and update the border
     //Left direction: x0 > 0
+    //Send Column 1 to the left and 
+    //Receive rightmost column from the left and place in Column 0
     if (x0>0){
         for (i=0; i<lN; i++)
             vec_out[i] = (*u)[i+1][1];
@@ -82,12 +84,11 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
         MPI_Recv(&vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 - 1, 99, MPI_COMM_WORLD, &status);
         for (i=0; i<lN; i++)
             (*u)[i+1][0] = vec_in[i];
-        for (i=1; i<lN+1; i++)
-            (*uu)[i][1] = 0.25*(1/(float)(N*N) + ((*u)[i-1][1] + (*u)[i+1][1] + \
-                        (*u)[i][0] + (*u)[i][2]));
     }
 
     //Right direction: x0 < s
+    //Send Column lN to the right and 
+    //Receive leftmost from the left and place in Column lN+1
     if (x0<(s-1)){
         for (i=0; i<lN; i++)
             vec_out[i] = (*u)[i+1][lN];
@@ -98,12 +99,11 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
         MPI_Recv(&vec_in[0],  lN, MPI_DOUBLE, y0*s + x0 + 1, 99, MPI_COMM_WORLD, &status);
         for (i=0; i<lN; i++)
             (*u)[i+1][lN+1] = vec_in[i];
-        for (i=1; i<lN+1; i++)
-            (*uu)[i][lN] = 0.25*(1/(float)(N*N) + ((*u)[i-1][lN] + (*u)[i+1][lN] + \
-                        (*u)[i][lN-1] + (*u)[i][lN+1]));
     }
 
     //Up direction: y0 > 0
+    //Send Row 1 up and 
+    //Receive bottomost row from above and place in Row 0
     if (y0>0){
         for (i=0; i<lN; i++)
             vec_out[i] = (*u)[1][i+1];
@@ -115,12 +115,11 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
         
         for (i=0; i<lN; i++)
             (*u)[0][i+1] = vec_in[i];
-        for (i=1; i<lN+1; i++)
-            (*uu)[1][i] = 0.25*(1/(float)(N*N) + ((*u)[1][i-1] + (*u)[1][i+1] + \
-                        (*u)[0][i] + (*u)[2][i]));
     }
 
     //Down direction: y0 < s
+    //Send Row lN down and 
+    //Receive topmost row from below and place in Row lN+1
     if (y0<(s-1)){
         for (i=0; i<lN; i++)
             vec_out[i] = (*u)[lN][i+1];
@@ -132,17 +131,36 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
         
         for (i=0; i<lN; i++)
             (*u)[lN+1][i+1] = vec_in[i];
-        for (i=1; i<lN+1; i++)
-            (*uu)[lN][i] = 0.25*(1/(float)(N*N) + ((*u)[lN][i-1] + (*u)[lN][i+1] + \
-                        (*u)[lN-1][i] + (*u)[lN+1][i]));
     }
 
+    //Calculate sides (which were only missing one ghost value before, now updated)
+    for (i=2; i<lN; i++){
+        (*uu)[i][1] = 0.25*(1/(float)(N*N) + ((*u)[i-1][1] + (*u)[i+1][1] + \
+                    (*u)[i][0] + (*u)[i][2]));
+        (*uu)[i][lN] = 0.25*(1/(float)(N*N) + ((*u)[i-1][lN] + (*u)[i+1][lN] + \
+                    (*u)[i][lN-1] + (*u)[i][lN+1]));
+        (*uu)[1][i] = 0.25*(1/(float)(N*N) + ((*u)[1][i-1] + (*u)[1][i+1] + \
+                    (*u)[0][i] + (*u)[2][i]));
+        (*uu)[lN][i] = 0.25*(1/(float)(N*N) + ((*u)[lN][i-1] + (*u)[lN][i+1] + \
+                    (*u)[lN-1][i] + (*u)[lN+1][i]));
+    }
+
+    //Calculate corners (which were missing two ghost values before)
+    (*uu)[1][1] = 0.25*(1/(float)(N*N) + ((*u)[0][1] + (*u)[2][1] + \
+                (*u)[1][0] + (*u)[1][2]));
+    (*uu)[1][lN] = 0.25*(1/(float)(N*N) + ((*u)[0][lN] + (*u)[2][lN] + \
+                (*u)[1][lN-1] + (*u)[1][lN+1]));
+    (*uu)[lN][1] = 0.25*(1/(float)(N*N) + ((*u)[lN][0] + (*u)[lN][2] + \
+                (*u)[lN+1][1] + (*u)[lN-1][1]));
+    (*uu)[lN][lN] = 0.25*(1/(float)(N*N) + ((*u)[lN][lN-1] + (*u)[lN][lN+1] + \
+                (*u)[lN-1][lN] + (*u)[lN+1][lN]));
+    
     free (vec_in);
     free (vec_out);
 }
 
 int main (int argc, char *argv[]){
-    int    r, p,       //rank, numprocesses
+    int    r, p,      //rank, numprocesses
            i, j,      //iterators
            N, lN,     //side length, submatrix side length
            iter, max_iter;
@@ -157,7 +175,7 @@ int main (int argc, char *argv[]){
     root = 0;
 
     //debug loop, attach with gdb --pid <number>
-    if(0==r)
+    if(999999==r)
     {
         int i = 0;
         char hostname[256];
@@ -170,9 +188,6 @@ int main (int argc, char *argv[]){
 
     sscanf(argv[1], "%i", &N);
     sscanf(argv[2], "%i", &max_iter);
-    
-//    N = atoi(argv[1]);
-//    max_iter = atoi(argv[2]);
     
     //Check to see if the parameters are OK for our simplified assumptions
     //First: is the number of processes a square?
@@ -190,6 +205,7 @@ int main (int argc, char *argv[]){
     }
     else
         lN = N / s;
+
     /* timing */
     MPI_Barrier(MPI_COMM_WORLD);
     timestamp_type time1, time2;
@@ -199,8 +215,7 @@ int main (int argc, char *argv[]){
     count = taskid;
 
     //Scheme (blocking communication):
-    //Task 0 determines sizes and cuts
-    //Task 0 keeps first part for tself and sends rest to other tasks
+    //All tasks determines sizes and cuts
     //All tasks compute inner portions of subarrays
     //All tasks send 2, 3 or 4 ghost vectors to neighbors
     //All tasks receive 2, 3 or 4 ghost vectors from neighbors
@@ -224,8 +239,12 @@ int main (int argc, char *argv[]){
     // +2 on lN to add a boundary
     u =  malloc((lN+2) * sizeof *u);
     if (u)
-        for (int i=0; i<N+2; i++)
+        for (int i=0; i<lN+2; i++)
             u[i] = malloc((lN+2)* sizeof *u[i]);
+    else{
+        printf("ruh-roh");
+        MPI_Abort(MPI_COMM_WORLD, 0);
+    }
     // initialize first estimate = 0
     for (int i=0; i<lN+2; i++)  
         for (int j=0; j<lN+2; j++)
@@ -236,7 +255,7 @@ int main (int argc, char *argv[]){
     int y0 = r/s;
 
     // calculate L2 norm or residual for initial guess
-    l2 = L2_res(&u, lN, x0, y0, s);
+    l2 = L2_res(&u, lN, s);
     norm0 = l2;
     if (0==r) 
         fprintf(stderr, "Norm of residual ||Au[0] - f|| = %.8f\n", norm0);
@@ -254,30 +273,29 @@ int main (int argc, char *argv[]){
             uu[i][j] = 0.;
 
     for (int iter=1; (iter<=max_iter && norm/norm0 > term_factor); iter++){
-        MPI_Barrier(MPI_COMM_WORLD);
+        //MPI_Barrier(MPI_COMM_WORLD);
         jacobi_iteration(&u, &uu, lN, r, x0, y0, s);
         swaparray(&u, &uu);
-        l2 = L2_res(&u, lN, x0, y0, s);
+        l2 = L2_res(&u, lN, s);
         if (!(iter%10)&& 0==r)
             fprintf(stderr, "Norm of residual ||Au[k] - f|| at iteration %i =  %.8f\n", iter, l2);
     }
 
-/*    for (int i=0; i<(N+2); i++)
-        free (uu[i]);
-    free(uu);
-    for (int i=0; i<(N+2); i++)
+    for (int i=0; i<(lN+2); i++)
         free (u[i]);
     free(u);
-*/
+    for (int i=0; i<(lN+2); i++)
+        free (uu[i]);
+    free(uu);
+
     if (0==r){
         get_timestamp(&t2);
-
     double elapsed_s = timestamp_diff_in_seconds(t1, t2);
     long elapsed = elapsed_s*1e6;
     fprintf(stderr, "Time elapsed is %li useconds.\n", elapsed);
     fprintf(stderr, "Time elapsed is %f seconds.\n", elapsed_s);
     printf("%li", elapsed);  //is there a better way to do this?
     }
-MPI_Finalize();
-    }
+    MPI_Finalize();
 
+}
