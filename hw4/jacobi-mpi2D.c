@@ -110,8 +110,8 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
 //        MPI_Sendrecv(u[1][1],    lN, MPI_DOUBLE, (y0-1)*s + x0, 100,
 //                     u[lN+1][1], lN, MPI_DOUBLE, (y0-1)*s + x0, 100,
 //                     MPI_COMM_WORLD, status[3]);
-        MPI_Send(&u[1][1],   lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
-        MPI_Recv(&vec_in[0], lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD, &status);
+        MPI_Send(&vec_out[0], lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Recv(&vec_in[0],  lN, MPI_DOUBLE, (y0-1)*s + x0, 99, MPI_COMM_WORLD, &status);
         
         for (i=0; i<lN; i++)
             (*u)[0][i+1] = vec_in[i];
@@ -127,7 +127,7 @@ void jacobi_iteration(double ***u, double ***uu, int lN, int r, int x0, int y0, 
 //        MPI_Sendrecv(u[lN+1][1],    lN, MPI_DOUBLE, (y0+1)*s + x0, 100,
 //                     u[1][1], lN, MPI_DOUBLE, (y0+1)*s + x0, 100,
 //                     MPI_COMM_WORLD, status[0]);
-        MPI_Send(&u[1][1],   lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
+        MPI_Send(&vec_out[0],   lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD);
         MPI_Recv(&vec_in[0], lN, MPI_DOUBLE, (y0+1)*s + x0, 99, MPI_COMM_WORLD, &status);
         
         for (i=0; i<lN; i++)
@@ -157,7 +157,7 @@ int main (int argc, char *argv[]){
     root = 0;
 
     //debug loop, attach with gdb --pid <number>
-    if(999999==r)
+    if(0==r)
     {
         int i = 0;
         char hostname[256];
@@ -195,7 +195,7 @@ int main (int argc, char *argv[]){
     timestamp_type time1, time2;
     get_timestamp(&time1);
 
-    printf ("Task %d on %s starting...\n", r, hostname);
+    printf ("Task %i on %s starting...\n", r, hostname);
     count = taskid;
 
     //Scheme (blocking communication):
