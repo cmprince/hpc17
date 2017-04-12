@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <mpi.h>
 #include <stdlib.h>
-
+#include <math.h>
 
 static int compare(const void *a, const void *b)
 {
@@ -22,8 +22,8 @@ static int compare(const void *a, const void *b)
 int main( int argc, char *argv[])
 {
   int rank;
-  int i, N;
-  int *vec;
+  int i, N, s;
+  int *vec, *randomsubset, *gather;
 
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -45,14 +45,28 @@ int main( int argc, char *argv[])
   /* sort locally */
   qsort(vec, N, sizeof(int), compare);
 
+  /* Get number of processes */
+  int p;
+  MPI_Comm_size(MPI_COMM_WORLD, &p);
+
+  /* set the subsample size */
+  s = (int)sqrt(N);
+  randomsubset = malloc(s * sizeof randomsubset);
+  gather = malloc(s*p* sizeof gather);
+
   /* randomly sample s entries from vector or select local splitters,
    * i.e., every N/P-th entry of the sorted vector */
+  for (i=0; i<s; ++i){
+    randomsubset[i] = vec[N*(i/s)]  
+  }
 
   /* every processor communicates the selected entries
    * to the root processor; use for instance an MPI_Gather */
+  MPI_Gather(&randomsubset, s, MPI_INTEGER, &gather, s, MPI_INTEGER, 0, MPI_COMM_WORLD);
 
   /* root processor does a sort, determinates splitters that
    * split the data into P buckets of approximately the same size */
+  qsort(gather, p*s, sizeof gather, compare);
 
   /* root process broadcasts splitters */
 
