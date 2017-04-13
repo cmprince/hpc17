@@ -52,7 +52,7 @@ int main( int argc, char *argv[])
 
   /* Number of random numbers per processor (this should be increased
    * for actual tests or could be passed in through the command line */
-  N = 100;
+  N = 10000;
 
   vec = calloc(N, sizeof(int));
   /* seed random number generator differently on every core */
@@ -117,6 +117,7 @@ printf("spindex %i: %i,", i-1, spindex);
       senddisplace[j+1] = i;
     }
     else{
+        printf("vec %i, spl %i\n", vec[i], splitters[j]);
       sendcount[j] = senddisplace[j+1] - senddisplace[j];
       j++;
     }
