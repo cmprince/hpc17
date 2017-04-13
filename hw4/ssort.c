@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <limits.h>
+#include "util.h"
 
 // These #defines are used by the randsamp routine below
 #define MAX_ALLOC ((uint32_t)0x40000000)  //max allocated bytes, fix per platform
@@ -33,6 +34,9 @@ int main( int argc, char *argv[])
   int i, N, s;
   int *vec, *randindices, *randomsubset, *gather, *splitters, 
       *sendcount, *recvcount, *senddisplace, *recvdisplace, *vec2;
+  timestamp_type t1, t2;
+
+  get_timestamp(&t1);
 
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -48,12 +52,12 @@ int main( int argc, char *argv[])
         while (0 == i)
             sleep(5);
     }
+  
 
-
-
-  /* Number of random numbers per processor (this should be increased
-   * for actual tests or could be passed in through the command line */
-  N = 100;
+  /* Number of random numbers per processor (default or from command line) */
+  N = 1000000;
+  if (2==argc)
+      N = atoi(argv[1]);
 
   vec = calloc(N, sizeof(int));
   /* seed random number generator differently on every core */
@@ -63,55 +67,55 @@ int main( int argc, char *argv[])
     vec[i] = rand();
   }
 
-//sort was here
   /* Get number of processes */
   int p;
   MPI_Comm_size(MPI_COMM_WORLD, &p);
 
   /* set the subsample size */
   s = (int)sqrt(N);
-  randomsubset = (int*)malloc(s*   sizeof (int));  //randomsubset);
-  gather       = (int*)malloc(s*p* sizeof (int)); //gather);
-  splitters    = malloc(p*   sizeof (int));
-  sendcount    = malloc(p*   sizeof (int));
-  recvcount    = malloc(p*   sizeof (int));
-  senddisplace = calloc(p,   sizeof (int));
-  recvdisplace = calloc(p,   sizeof (int));
+
+  randomsubset = malloc(s*   sizeof randomsubset);  
+  gather       = malloc(s*p* sizeof gather); //(int)); 
+  splitters    = malloc(p*   sizeof splitters); //(int));
+  sendcount    = malloc(p*   sizeof sendcount); //(int));
+  recvcount    = malloc(p*   sizeof recvcount); //(int));
+  senddisplace = calloc(p,   sizeof senddisplace); //(int));
+  recvdisplace = calloc(p,   sizeof recvdisplace); //(int));
 
   /* randomly sample s entries from vector or select local splitters,
    * i.e., every N/P-th entry of the sorted vector */
   randindices = randsamp(s, 0, N-1);
   for (i=0; i<s; ++i){
-    randomsubset[i]=vec[i];
-      randomsubset[i] = vec[(int)(N*i/(float)s)+1]; // vec[randindices[i]];  
+      randomsubset[i] = vec[randindices[i]]; 
   }
-  printf("\n");
+  free(randindices);
+
   for (i=0; i<p; ++i){
       sendcount[i] = 0;
   }
 
   /* sort locally */
   qsort(vec, N, sizeof(int), compare);
+  
   /* every processor communicates the selected entries
    * to the root processor; use for instance an MPI_Gather */
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Gather(randomsubset, s, MPI_INT, gather, s, MPI_INT, 0, MPI_COMM_WORLD);
+  free(randomsubset);
 
   /* root processor does a sort, determinates splitters that
    * split the data into P buckets of approximately the same size */
   if (0==rank){
     qsort(gather, p*s, sizeof (int), compare);
-    int spindex;
-    for (i=1; i<p; ++i){
-      spindex = i*s;  //(int)(p*s*(i/(float)p));  
-      splitters[i-1] = gather[spindex];
-    }
+    for (i=1; i<p; ++i)
+      splitters[i-1] = gather[i*s];
     splitters[p-1] = INT_MAX;
   }
+  free(gather);
 
   /* root process broadcasts splitters */
   MPI_Bcast(splitters, p, MPI_INT, 0, MPI_COMM_WORLD);
-
+  
   /* every processor uses the obtained splitters to decide
    * which integers need to be sent to which other processor (local bins) */
   int j=0;
@@ -125,15 +129,20 @@ int main( int argc, char *argv[])
       j++;
     }
   }
+  free(splitters);
+
   for (i=0;  i<(p-1); ++i){
       sendcount[i] = senddisplace[i+1] - senddisplace[i];
-      printf("rank: %d, j: %i, sc: %i, sd: %i\n", rank, i, sendcount[i], senddisplace[i]);
+      //printf("rank: %d, j: %i, sc: %i, sd: %i\n", rank, i, sendcount[i], senddisplace[i]);
   }
 
   sendcount[p-1] = N - senddisplace[p-1];
-      printf("rank: %d, j: %i, sc: %i, sd: %i\n", rank, p-1, sendcount[p-1], senddisplace[p-1]);
+      //printf("rank: %d, j: %i, sc: %i, sd: %i\n", rank, p-1, sendcount[p-1], senddisplace[p-1]);
 
+  //Send the buffer sizes to the other threads so they know what to receive
   MPI_Alltoall(sendcount, 1, MPI_INT, recvcount, 1, MPI_INT, MPI_COMM_WORLD);
+
+  //Calculate receive displacements and total length of new vec2
   recvdisplace[0]=0;
   int cur=0;
   for (i=1; i<p; ++i){
@@ -143,11 +152,13 @@ int main( int argc, char *argv[])
   cur += recvcount[p-1];
   vec2 = calloc(cur, sizeof(int));
 
+  /* debug print 
   for (i=0;  i<(p-1); ++i){
       printf("rank: %d, j: %i, rc: %i, rd: %i\n", rank, i, recvcount[i], recvdisplace[i]);
   }
       printf("rank: %d, j: %i, rc: %i, rd: %i\n", rank, p-1, recvcount[p-1], recvdisplace[p-1]);
-MPI_Barrier(MPI_COMM_WORLD);
+  // */
+
   /* send and receive: either you use MPI_AlltoallV, or
    * (and that might be easier), use an MPI_Alltoall to share
    * with every processor how many integers it should expect,
@@ -155,14 +166,34 @@ MPI_Barrier(MPI_COMM_WORLD);
   MPI_Alltoallv(vec,  sendcount, senddisplace, MPI_INT, 
                 vec2, recvcount, recvdisplace, MPI_INT, 
                 MPI_COMM_WORLD);
+  free(vec);
+  free(sendcount);
+  free(recvcount);
+  free(senddisplace);
+  free(recvdisplace);
 
-printf("%i got here\n", rank);
   /* do a local sort */
-  qsort(vec, N, sizeof(int), compare);
+  qsort(vec2, cur, sizeof(int), compare);
 
   /* every processor writes its result to a file */
+  char file[1024];
+  snprintf(file,1024,"ssort_rank%05d.dat",rank);
+  FILE *filePtr = fopen(file,"w");
+  for(i=0;i<cur;i++){
+    fprintf(filePtr,"%d\n",vec2[i]);
+  }
+  fclose(filePtr);
 
-  free(vec);
+  free(vec2);
+  
+  get_timestamp(&t2);
+  double elapsed = timestamp_diff_in_seconds(t1, t2);
+  double maxtime = 0;
+
+  //The total time is that of the longest running thread
+  MPI_Reduce(&elapsed, &maxtime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+  if (0==rank) printf("Elapsed time is %.06fs\n", elapsed);
+
   MPI_Finalize();
   return 0;
 }
