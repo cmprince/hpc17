@@ -1,2 +1,2 @@
 # homework 4
-!(./jacobi-strong-scaling.png)
+!(https://github.com/cmprince/hpc17/blob/master/hw4/jacobi-strong-scaling.png)
