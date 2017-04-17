@@ -1,2 +1,2 @@
 # homework 4
-!(jacobi-strong-scaling.png)
+!(./jacobi-strong-scaling.png)
