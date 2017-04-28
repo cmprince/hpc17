@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "timing.h"
+//#include "timing.h"
 #include "cl-helper.h"
 #include "ppma_io.h"
 
@@ -12,6 +12,41 @@
 #define WGX 12
 #define WGY 12
 #define NON_OPTIMIZED
+
+void nabla(int &img, int &out, int h, int w){
+    
+    for (int i = 0; i < w; i++){
+        for (int j = 0; j < h; j++){
+            int idx = j*w + i;
+            if (i!=w){
+                *out[idx][0] -= *img[idx];
+                *out[idx][0] += *img[idx + 1];
+            }
+            if (j!=h){
+                *out[idx][1] -= *img[idx];
+                *out[idx][1] += *img[idx + w];
+            }
+        }
+    }
+
+}
+
+void nablaT(int &diff, int &out, int h, int w){
+    
+    for (int i = 0; i < w; i++){
+        for (int j = 0; j < h; j++){
+            int idx = j*w + i;
+            if (i!=w){
+                *out[idx] -= *diff[idx][0];
+                *out[idx + 1] += *diff[idx][0];
+            }
+            if (j!=h){
+                *out[idx] -= *diff[idx][1];
+                *out[idx + w] += *diff[idx][1];
+            }
+        }
+    }
+}
 
 double generateGaussianNoise(const double& mean, const double &stdDev)
 {
@@ -46,14 +81,14 @@ void make_noisy(int &img, int N){
 	}
 }
 
-def make_noisy(int &img, int N):
-    /* add gaussian #noise */
-	img = np.clip(img + 0.025 * np.random.normal(size=img.shape), 0, 1)
-    # add some outliers in on the right side of the image
-    m = np.random.rand(*img.shape) < 0.2
-    m[:,:300] = 0
-    img[m] = np.random.rand(m.sum())
-    return img
+// def make_noisy(int &img, int N):
+//     /* add gaussian #noise */
+// 	img = np.clip(img + 0.025 * np.random.normal(size=img.shape), 0, 1)
+//     # add some outliers in on the right side of the image
+//     m = np.random.rand(*img.shape) < 0.2
+//     m[:,:300] = 0
+//     img[m] = np.random.rand(m.sum())
+//     return img
 
 void main(){
 
@@ -80,7 +115,8 @@ void main(){
     // --------------------------------------------------------------------------
     // allocate CPU buffers
     // --------------------------------------------------------------------------
-    posix_memalign((void**)&gray, 32, 4*xsize*ysize*sizeof(float));
+    posix_memalign((void**)&gray, 32, xsize*ysize*sizeof(float));
+    //posix_memalign((void**)&gray, 32, 4*xsize*ysize*sizeof(float));
     if(!gray) { fprintf(stderr, "alloc gray"); abort(); }
     posix_memalign((void**)&tv1, 32, 4*xsize*ysize*sizeof(float));
     if(!tv1) { fprintf(stderr, "alloc gray"); abort(); }
@@ -94,10 +130,11 @@ void main(){
     // convert image to grayscale
     // --------------------------------------------------------------------------
     for(int n = 0; n < xsize*ysize; ++n) {
-      gray[4*n] = r[n];
-      gray[4*n+1] = g[n];
-      gray[4*n+2] = b[n];
-      gray[4*n+3] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
+//      gray[4*n] = r[n];
+//      gray[4*n+1] = g[n];
+//      gray[4*n+2] = b[n];
+//      gray[4*n+3] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
+      gray[n] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
     }
   
   
