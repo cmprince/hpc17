@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <math.h>
 //#include "timing.h"
-#include "cl-helper.h"
+//#include "cl-helper.h"
 #include "ppma_io.h"
+#include "tvl1-test.h"
 
 #define FILTER_WIDTH 7
 #define HALF_FILTER_WIDTH 3
@@ -13,73 +14,135 @@
 #define WGY 12
 #define NON_OPTIMIZED
 
-void nabla(int &img, int &out, int h, int w){
     
+void nabla(struct image *img, struct image *dx, struct image *dy){
+    
+    int h, w;
+    h = img->height;
+    w = img->width;
+
     for (int i = 0; i < w; i++){
         for (int j = 0; j < h; j++){
             int idx = j*w + i;
             if (i!=w){
-                *out[idx][0] -= *img[idx];
-                *out[idx][0] += *img[idx + 1];
+                dx->data[idx] -= img->data[idx];
+                dx->data[idx] += img->data[idx + 1];
             }
             if (j!=h){
-                *out[idx][1] -= *img[idx];
-                *out[idx][1] += *img[idx + w];
-            }
-        }
-    }
-
-}
-
-void nablaT(int &diff, int &out, int h, int w){
-    
-    for (int i = 0; i < w; i++){
-        for (int j = 0; j < h; j++){
-            int idx = j*w + i;
-            if (i!=w){
-                *out[idx] -= *diff[idx][0];
-                *out[idx + 1] += *diff[idx][0];
-            }
-            if (j!=h){
-                *out[idx] -= *diff[idx][1];
-                *out[idx + w] += *diff[idx][1];
+                dy->data[idx] -= img->data[idx];
+                dy->data[idx] += img->data[idx + w];
             }
         }
     }
 }
 
-double generateGaussianNoise(const double& mean, const double &stdDev)
-{
-	static bool hasSpare = false;
- 	static double spare;
- 
- 	if(hasSpare)
- 	{
- 		hasSpare = false;
- 		return mean + stdDev * spare;
- 	}
- 
- 	hasSpare = true;
- 	static double u, v, s;
- 	do
- 	{
- 		u = (rand() / ((double) RAND_MAX)) * 2.0 - 1.0;
- 		v = (rand() / ((double) RAND_MAX)) * 2.0 - 1.0;
- 		s = u * u + v * v;
- 	}
- 	while( (s >= 1.0) || (s == 0.0) );
- 
- 	s = sqrt(-2.0 * log(s) / s);
- 	spare = v * s;
- 	return mean + stdDev * u * s;
+void nablaT(struct image *dx, struct image *dy, struct image *img){
+    
+    int h, w;
+    h = img->height;
+    w = img->width;
+    
+    for (int i = 0; i < w; i++){
+        for (int j = 0; j < h; j++){
+            int idx = j * w + i;
+            if (i!=w){
+                img->data[idx] -= dx->data[idx];
+                img->data[idx + 1] += dx->data[idx];
+            }
+            if (j!=h){
+                img->data[idx] -= dy->data[idx];
+                img->data[idx + w] += dy->data[idx];
+            }
+        }
+    }
 }
 
-void make_noisy(int &img, int N){
-    for (int i = 0; i<N; ++i){
-        img[i] += generateGaussianNoise(0, 0.05); 
-        img[i] = min(1, max(0, img[i]));
-	}
+void anorm(struct image *img, double *a){
+    
+    int h = img->height;
+    int w = img->width;
+    int sumofsq;
+
+    for (int j = 0; j < h; j++){
+        sumofsq = 0;
+        for (int i = 0; i < w; i++){
+            int idx = j*w + i;
+            sumofsq += pow(img->data[idx], 2);
+        }
+        a[j] = sqrt(sumofsq);
+    }
 }
+
+void project(struct image *img, struct image *proj, double r){
+
+    int h = img->height;
+    int w = img->width;
+
+    double *an = malloc(h * sizeof an);
+    anorm(img, an);
+
+    for (int i = 0; i < h; i++)
+        an[i] = (an[i]<1.0 ? an[i]/r : 1.0);
+
+    for (int j = 0; j < h; j++){
+        for (int i = 0; i < w; i++){
+            int idx = j * w + i;
+            proj->data[idx] = img->data[idx] / an[j];
+        }
+    }
+    free(an);
+}
+
+double clip(float n, float low, float high){
+    return (n<low ? low: (n>high ? high : n));
+}
+
+void shrink(struct image *proj, struct image *img, struct image *sh, double step){
+
+    int h = img->height;
+    int w = img->width;
+
+    for (int j = 0; j < h; j++){
+        for (int i = 0; i < w; i++){
+            int idx = j*w + i;
+            sh->data[idx] = proj->data[idx] + clip(img->data[idx] - proj->data[idx], -step, step);
+        }
+    }
+}
+
+
+// double generateGaussianNoise(const double *mean, const double *stdDev)
+// {
+// 	static int hasSpare = 0;
+//  	static double spare;
+//  
+//  	if(hasSpare)
+//  	{
+//  		hasSpare = 0;
+//  		return mean + stdDev * spare;
+//  	}
+//  
+//  	hasSpare = 1;
+//  	static double u, v, s;
+//  	do
+//  	{
+//  		u = (rand() / ((double) RAND_MAX)) * 2.0 - 1.0;
+//  		v = (rand() / ((double) RAND_MAX)) * 2.0 - 1.0;
+//  		s = u * u + v * v;
+//  	}
+//  	while( (s >= 1.0) || (s == 0.0) );
+//  
+//  	s = sqrt(-2.0 * log(s) / s);
+//  	spare = v * s;
+//  	return mean + stdDev * u * s;
+// }
+
+// void make_noisy(int *img, int N){
+//     for (int i = 0; i<N; ++i){
+//         img[i] += generateGaussianNoise(0, 0.05); 
+//         img[i] = min(1, max(0, img[i]));
+// 	}
+// }
 
 // def make_noisy(int &img, int N):
 //     /* add gaussian #noise */
@@ -90,7 +153,7 @@ void make_noisy(int &img, int N){
 //     img[m] = np.random.rand(m.sum())
 //     return img
 
-void main(){
+void main(int argc, char *argv[]){
 
     if(argc != 3)
     {
@@ -103,6 +166,7 @@ void main(){
     float *gray, *tv1;
     int *r, *g, *b;
     int error, xs, ys, rgb_max;
+    int xsize, ysize;
 
     // --------------------------------------------------------------------------
     // load image
@@ -143,9 +207,9 @@ void main(){
     // --------------------------------------------------------------------------
     printf("Writing cpu filtered image\n");
     for(int n = 0; n < xsize*ysize; ++n) {
-      r[n] = (int)(congray[4*n] * rgb_max);
-      g[n] = (int)(congray[4*n+1] * rgb_max);
-      b[n] = (int)(congray[4*n+2] * rgb_max);
+      r[n] = (int)(gray[4*n] * rgb_max);
+      g[n] = (int)(gray[4*n+1] * rgb_max);
+      b[n] = (int)(gray[4*n+2] * rgb_max);
     }
     error = ppma_write("output_cpu.ppm", xsize, ysize, r, g, b);
     if(error) { fprintf(stderr, "error writing image"); abort(); }
