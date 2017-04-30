@@ -10,6 +10,8 @@ struct image{
     int width;
 };
 
+void freeimg(struct image *img);
+struct image *makeimg(int height, int width);
 void nabla(struct image *img, struct image *dx, struct image *dy);
 void nablaT(struct image *dx, struct image *dy, struct image *img);
 void anorm(struct image *dx, struct image *dy, struct image *a);

@@ -14,7 +14,37 @@
 #define WGY 12
 #define NON_OPTIMIZED
 
-    
+
+/* -------------------------------------------------- 
+ * Contructor/destructor routines for image structs
+ * Adapted from http://stackoverflow.com/questions/14768230/malloc-for-struct-and-pointer-in-c
+ * --------------------------------------------------*/
+
+void freeimg(struct image *img){
+    if (img!=NULL){
+        free(img->data);
+        free(img);
+    }
+}
+
+struct image *makeimg(int height, int width){
+// should this be void makeimg(struct image *img, ...)?
+    struct image *retVal = malloc (sizeof (struct image));
+    if (retVal == NULL)
+        return NULL;
+
+    retVal->data = malloc (height * width * sizeof (double));
+    if (retVal->data == NULL){
+        free (retVal);
+        return NULL;
+    }
+
+    retVal->height = height;
+    retVal->width  = width;
+    return retVal;
+
+}
+
 void nabla(struct image *img, struct image *dx, struct image *dy){
     
     int h, w;
@@ -77,10 +107,11 @@ void project(struct image *dx, struct image *dy,
     int w = dx->width;
 
     struct image *an;
-    an->height = h;
-    an->width = w;
+    an = makeimg(h, w);
+    //an->height = h;
+    //an->width = w;
 
-    an->data = malloc(h*w * sizeof (double));
+    //an->data = malloc(h*w * sizeof (double));
     anorm(dx, dy, an);
 
     for (int i = 0; i < h*w; i++)
@@ -119,24 +150,32 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
     double sigma;
     sigma = 1.0 / (L2 * tau);
 
-    struct image *X, *X1, *Px, *Py, *nablaXx, *nablaXy, *nablaTP;
     int h, w;
 
     h = img->height;
     w = img->width;
 
-    X->data        = malloc(h * w * sizeof (double));
-    X1->data       = calloc(h * w,  sizeof (double));
-    Px->data       = calloc(h * w,  sizeof (double));
-    Py->data       = calloc(h * w,  sizeof (double));
-    nablaXx->data  = calloc(h * w,  sizeof (double));
-    nablaXy->data  = calloc(h * w,  sizeof (double));
-    nablaTP->data  = calloc(h * w,  sizeof (double));
+    struct image *X, *X1, *Px, *Py, *nablaXx, *nablaXy, *nablaTP;
+    
+    //X->data        = malloc(h * w * sizeof (double));
+    //X1->data       = calloc(h * w,  sizeof (double));
+    //Px->data       = calloc(h * w,  sizeof (double));
+    //Py->data       = calloc(h * w,  sizeof (double));
+    //nablaXx->data  = calloc(h * w,  sizeof (double));
+    //nablaXy->data  = calloc(h * w,  sizeof (double));
+    //nablaTP->data  = calloc(h * w,  sizeof (double));
 
-    X->height = X1->height = Px->height = Py->height = nablaXx->height = nablaXy->height = nablaTP->height = h;
-    X->width  = X1->width  = Px->width  = Py->width  = nablaXx->width  = nablaXy->width  = nablaTP->width  = w;
+    X       = makeimg(h, w);
+    X1      = makeimg(h, w);
+    Px      = makeimg(h, w);
+    Py      = makeimg(h, w);
+    nablaXx = makeimg(h, w);
+    nablaXy = makeimg(h, w);
+    nablaTP = makeimg(h, w);
+    //X->height = X1->height = Px->height = Py->height = nablaXx->height = nablaXy->height = nablaTP->height = h;
+    //X->width  = X1->width  = Px->width  = Py->width  = nablaXx->width  = nablaXy->width  = nablaTP->width  = w;
 
-    for (int i; i<h*w; i++)
+    for (int i=0; i<h*w; i++)
         X->data[i] = img->data[i];
 
     nabla(X, Px, Py);
@@ -251,9 +290,11 @@ void main(int argc, char *argv[]){
     //if(!congray) { fprintf(stderr, "alloc gray"); abort(); }
     //posix_memalign((void**)&congray_cl, 32, 4*xsize*ysize*sizeof(float));
     //if(!congray_cl) { fprintf(stderr, "alloc gray"); abort(); }
-    gray->data   = malloc(xsize * ysize * sizeof (double));
-    filter->data = malloc(xsize * ysize * sizeof (double));
-  
+    //gray->data   = malloc(xsize * ysize * sizeof (double));
+    gray = makeimg(xsize, ysize);
+    //filter->data = malloc(xsize * ysize * sizeof (double));
+    filter = makeimg(xsize, ysize);
+
     // --------------------------------------------------------------------------
     // convert image to grayscale
     // --------------------------------------------------------------------------
