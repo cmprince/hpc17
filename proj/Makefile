@@ -1,5 +1,5 @@
 EXECUTABLES = tvl1-test
-#CC=gcc49
+CC=gcc
 
 all: $(EXECUTABLES)
 
