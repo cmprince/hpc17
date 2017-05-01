@@ -28,12 +28,12 @@ void freeimg(struct image *img){
 }
 
 struct image *makeimg(int height, int width){
-// should this be void makeimg(struct image *img, ...)?
-    struct image *retVal = malloc (sizeof (struct image));
+
+    struct image *retVal = malloc (sizeof retVal);
     if (retVal == NULL)
         return NULL;
 
-    retVal->data = malloc (height * width * sizeof (double));
+    retVal->data = calloc (height * width, sizeof (double));
     if (retVal->data == NULL){
         free (retVal);
         return NULL;
@@ -76,26 +76,27 @@ void nablaT(struct image *dx, struct image *dy, struct image *img){
         for (int j = 0; j < h; j++){
             int idx = j * w + i;
             if (i!=w){
-                img->data[idx] -= dx->data[idx];
+                img->data[idx]     -= dx->data[idx];
                 img->data[idx + 1] += dx->data[idx];
             }
             if (j!=h){
-                img->data[idx] -= dy->data[idx];
+                img->data[idx]     -= dy->data[idx];
                 img->data[idx + w] += dy->data[idx];
             }
         }
     }
 }
 
-void anorm(struct image *dx, struct image *dy, struct image *a){
+void anorm(struct image *dx, struct image *dy, double *a){ //struct image *a){
     
     int h = dx->height;
     int w = dx->width;
-    int sumofsq;
+    float sumofsq;
 
     for (int i = 0; i < h*w; i++){
         sumofsq = pow(dx->data[i], 2) + pow(dy->data[i], 2);
-        a->data[i] = sqrt(sumofsq);
+        //a->data[i] = sqrt(sumofsq);
+        a[i] = sqrt(sumofsq);
     }
 }
 
@@ -106,23 +107,22 @@ void project(struct image *dx, struct image *dy,
     int h = dx->height;
     int w = dx->width;
 
-    struct image *an;
-    an = makeimg(h, w);
-    //an->height = h;
-    //an->width = w;
-
-    //an->data = malloc(h*w * sizeof (double));
+    //struct image *an;
+    double *an = calloc(h*w, sizeof(an)); //makeimg(h, w);
+    
     anorm(dx, dy, an);
 
     for (int i = 0; i < h*w; i++)
-        an->data[i] = (an->data[i]<1.0 ? an->data[i]/r : 1.0);
+        an[i] = ((an[i]/r < 0) ? an[i]/r : 1.0);
+        //an->data[i] = ((an->data[i]/r < 1.0) ? an->data[i]/r : 1.0);
 
-    for (int i = 0; i < w; i++){
-        projx->data[i] = dx->data[i] / an->data[i];
-        projy->data[i] = dy->data[i] / an->data[i];
+    for (int i = 0; i < h*w; i++){
+        projx->data[i] = dx->data[i] / an[i]; //->data[i];
+        projy->data[i] = dy->data[i] / an[i]; //->data[i];
     }
     
-    free(an->data);
+    free(an);
+    //freeimg(an);
 }
 
 double clip(float n, float low, float high){
@@ -157,14 +157,6 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
 
     struct image *X, *X1, *Px, *Py, *nablaXx, *nablaXy, *nablaTP;
     
-    //X->data        = malloc(h * w * sizeof (double));
-    //X1->data       = calloc(h * w,  sizeof (double));
-    //Px->data       = calloc(h * w,  sizeof (double));
-    //Py->data       = calloc(h * w,  sizeof (double));
-    //nablaXx->data  = calloc(h * w,  sizeof (double));
-    //nablaXy->data  = calloc(h * w,  sizeof (double));
-    //nablaTP->data  = calloc(h * w,  sizeof (double));
-
     X       = makeimg(h, w);
     X1      = makeimg(h, w);
     Px      = makeimg(h, w);
@@ -172,8 +164,6 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
     nablaXx = makeimg(h, w);
     nablaXy = makeimg(h, w);
     nablaTP = makeimg(h, w);
-    //X->height = X1->height = Px->height = Py->height = nablaXx->height = nablaXy->height = nablaTP->height = h;
-    //X->width  = X1->width  = Px->width  = Py->width  = nablaXx->width  = nablaXy->width  = nablaTP->width  = w;
 
     for (int i=0; i<h*w; i++)
         X->data[i] = img->data[i];
@@ -188,14 +178,20 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
             nablaXy->data[i] += Py->data[i];
         }
         project(nablaXx, nablaXy, Px, Py, 1.0);
+//        if (t==0) {writeimg(nablaXx, "nablaXx.ppm");}
+//        if (t==0) {writeimg(nablaXy, "nablaXy.ppm");}
+//        if (t==0) {writeimg(Px, "Px.ppm");}
+//        if (t==0) {writeimg(Py, "Py.ppm");}
         
         nablaT(Px, Py, nablaTP);
+//        if (t==0) {writeimg(nablaTP, "nablaTP.ppm");}
         for (int i = 0; i < h*w; i++){
             nablaTP->data[i] *= -1. * sigma; 
             nablaTP->data[i] += X->data[i];
         }
         shrink(nablaTP, img, X1, clambda*tau);
-
+//        if (t==0) {writeimg(X1, "X1.ppm");}
+        
         for (int i = 0; i < h*w; i++)
             X->data[i] = X1->data[i] + theta * (X1->data[i] - X->data[i]);
     }
@@ -203,13 +199,43 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
     for (int i = 0; i < h*w; i++)
         filter->data[i] = X->data[i];
 
-    free(X);
-    free(X1);
-    free(Px);
-    free(Py);
-    free(nablaXx);
-    free(nablaXy);
-    free(nablaTP);
+    freeimg(X);
+    freeimg(X1);
+    freeimg(Px);
+    freeimg(Py);
+    freeimg(nablaXx);
+    freeimg(nablaXy);
+    freeimg(nablaTP);
+}
+
+void writeimg(struct image *img, char *fname){
+    // --------------------------------------------------------------------------
+    // output cpu filtered image
+    // --------------------------------------------------------------------------
+
+    int h = img->height;
+    int w = img->width;
+    int error;
+
+    const int rgb_max = 255;
+
+    int *red = malloc(h*w*sizeof red);
+    int *grn = malloc(h*w*sizeof grn);
+    int *blu = malloc(h*w*sizeof blu);
+
+    printf("Writing cpu filtered image\n");
+    for(int n = 0; n < h*w; ++n) {
+      red[n] = (int)(img->data[n] * rgb_max);
+      grn[n] = (int)(img->data[n] * rgb_max);
+      blu[n] = (int)(img->data[n] * rgb_max);
+    }
+    error = ppma_write(fname, w, h, red, grn, blu);
+    if(error) { fprintf(stderr, "error writing image"); abort(); }
+
+    free(red);
+    free(grn);
+    free(blu);
+
 }
 
 // double generateGaussianNoise(const double *mean, const double *stdDev)
@@ -245,15 +271,6 @@ void solve_tvl1(struct image *img, struct image *filter, double clambda, int ite
 // 	}
 // }
 
-// def make_noisy(int &img, int N):
-//     /* add gaussian #noise */
-// 	img = np.clip(img + 0.025 * np.random.normal(size=img.shape), 0, 1)
-//     # add some outliers in on the right side of the image
-//     m = np.random.rand(*img.shape) < 0.2
-//     m[:,:300] = 0
-//     img[m] = np.random.rand(m.sum())
-//     return img
-
 void main(int argc, char *argv[]){
 
     if(argc != 3)
@@ -265,10 +282,9 @@ void main(int argc, char *argv[]){
     const char* filename = argv[1];
     const int num_loops = atoi(argv[2]);
     int *r, *g, *b;
-    int error, xs, ys, rgb_max;
-    int xsize, ysize;
+    int xsize, ysize, rgb_max;
 
-    struct image *gray, *img, *filter;
+    struct image *gray, *filter;
 
     // --------------------------------------------------------------------------
     // load image
@@ -299,33 +315,18 @@ void main(int argc, char *argv[]){
     // convert image to grayscale
     // --------------------------------------------------------------------------
     for(int n = 0; n < xsize*ysize; ++n) {
-//      gray[4*n] = r[n];
-//      gray[4*n+1] = g[n];
-//      gray[4*n+2] = b[n];
-//      gray[4*n+3] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
       gray->data[n] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
     }
+    
+    writeimg(gray, "gray.ppm");
 
-    gray->height = ysize;
-    gray->width  = xsize;
-
-    solve_tvl1(gray, filter, 1, 101);
-    // --------------------------------------------------------------------------
-    // output cpu filtered image
-    // --------------------------------------------------------------------------
-    printf("Writing cpu filtered image\n");
-    for(int n = 0; n < xsize*ysize; ++n) {
-      r[n] = (int)(filter->data[n] * rgb_max * 0.5);
-      g[n] = (int)(filter->data[n] * rgb_max * 0.25);
-      b[n] = (int)(filter->data[n] * rgb_max * 1);
-    }
-    error = ppma_write("output_cpu.ppm", xsize, ysize, r, g, b);
-    if(error) { fprintf(stderr, "error writing image"); abort(); }
+    solve_tvl1(gray, filter, 1, num_loops);
+    writeimg(filter, "output_cpu.ppm");
 
     free(r);
     free(g);
     free(b);
-    free(gray->data);
-    free(filter->data);
+    freeimg(gray);
+    freeimg(filter);
 
 }
