@@ -47,6 +47,11 @@
 
 void nabla(double *img, double *dx, double *dy, int h, int w){
     
+    for (int i =0; i<h*w; i++){
+        dx[i] = 0;
+        dy[i] = 0;
+    }
+
     for (int i = 0; i < w; i++){
         for (int j = 0; j < h; j++){
             int idx = j*w + i;
@@ -127,10 +132,10 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, in
     double tau = 0.02;
     double theta = 1.0;
     double sigma;
-    sigma = 1.0 / (L2 * tau);
+    sigma = 1.0 / (float)(L2 * tau);
 
     double *X, *X1, *Px, *Py, *nablaXx, *nablaXy, *nablaTP, *an;
-    
+ 
     X       = calloc(h*w, sizeof(double));
     X1      = calloc(h*w, sizeof(double));
     Px      = calloc(h*w, sizeof(double));
@@ -144,8 +149,8 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, in
         X[i] = img[i];
 
     nabla(X, Px, Py, h, w);
-    writeimg(Px, "Px.ppm", h, w, 0.5, 128);
-    writeimg(Py, "Py.ppm", h, w, 0.5, 128);
+    //writeimg(Px, "Px.ppm", h, w, 0.5, 128);
+    //writeimg(Py, "Py.ppm", h, w, 0.5, 128);
     for (int t = 0; t < iter; t++){
         nabla(X, nablaXx, nablaXy, h, w);
         for (int i = 0; i < h*w; i++){
@@ -158,14 +163,16 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, in
         
         nablaT(Px, Py, nablaTP, h, w);
         for (int i = 0; i < h*w; i++){
-            nablaTP[i] *= -1. * sigma; 
+            nablaTP[i] *= (-1. * tau); 
             nablaTP[i] += X[i];
         }
-        if (t==iter-1){writeimg(nablaTP, "ntp.ppm", h, w, 1, 0);}
         shrink(nablaTP, img, X1, clambda*tau, h, w);
         
         for (int i = 0; i < h*w; i++)
             X[i] = X1[i] + theta * (X1[i] - X[i]);
+        if (t==iter-1){
+            for (int z=0; z<100; z++){printf("%.2f ", X[z]);}
+            writeimg(X, "X.ppm", h, w, 1,0);}
     }
 
     for (int i = 0; i < h*w; i++)
@@ -288,7 +295,7 @@ void main(int argc, char *argv[]){
     for(int n = 0; n < xsize*ysize; ++n) {
       gray[n] = (0.21f*r[n])/rgb_max + (0.72f*g[n])/rgb_max + (0.07f*b[n])/rgb_max;
     }
-    
+
     writeimg(gray, "gray.ppm", ysize, xsize, 1, 0);
 
     solve_tvl1(gray, filter, 1, num_loops, ysize, xsize);
