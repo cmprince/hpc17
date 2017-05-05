@@ -105,7 +105,7 @@ void project(double *dx, double *dy,
     anorm(dx, dy, an, h, w);
 
     for (int i = 0; i < h*w; i++){
-        an[i] = ((an[i]/r < 0) ? an[i]/r : 1.0);
+        an[i] = ((an[i]/r > 1.0) ? an[i]/r : 1.0);
         projx[i] = dx[i] / an[i];
         projy[i] = dy[i] / an[i];
     }
@@ -171,7 +171,10 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, in
         for (int i = 0; i < h*w; i++)
             X[i] = X1[i] + theta * (X1[i] - X[i]);
         if (t==iter-1){
-            for (int z=0; z<100; z++){printf("%.2f ", X[z]);}
+            for (int z=0; z<h*w; z++){
+                if (X[z] > 1) {printf("%i: %.2f ", z, X[z]); X[z]=1.;}
+                if (X[z] < 0) {printf("%i: %.2f ", z, X[z]); X[z]=0.;}
+            }
             writeimg(X, "X.ppm", h, w, 1,0);}
     }
 
