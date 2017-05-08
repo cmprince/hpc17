@@ -152,8 +152,9 @@ void project(double *dx, double *dy,
             an[idx] = ((an[idx] > 1.0) ? an[idx] : 1.0);
             projx[ghostidx] = dx[idx] / an[idx];
             projy[ghostidx] = dy[idx] / an[idx];
-    }
     
+        }
+    }
 }
 
 double clip(float n, float low, float high){
