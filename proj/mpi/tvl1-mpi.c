@@ -11,11 +11,42 @@
 void nabla(double *img, double *dx, double *dy,
            int h, int w, int rank, int xprocs, int yprocs){ 
 
-    int i, j, idx, isRightEdge, isDownEdge;    
+    int i, j, idx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
+    double right[h], left[h], down[w], up[w];
+    MPI_Request req[2];
 
     // is my process responsible for a right or bottom edge?
-    isRightEdge = ((rank+1)%xprocs==0)?1:0;
-    isDownEdge  = ((rank+1)>(yprocs-1)*xprocs)?1:0;
+    isRightEdge = ((rank+1) %            xprocs==0)?1:0;
+    isLeftEdge  = ((rank  ) %            xprocs==0)?1:0;
+    isDownEdge  = ((rank+1) > (yprocs-1)*xprocs   )?1:0;
+    isUpEdge    = ((rank  ) <            xprocs   )?1:0;
+
+    if (!isLeftEdge){
+        //send my leftmost to my left neighbor
+        for (i=0; i<h; ++i)
+            left[i] = img[w*i];
+        MPI_Isend(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req[0]);
+    }
+    if (!isRightEdge){
+        //receive my right neighbor's leftmost
+        MPI_Irecv(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req[0]);
+        // place the vector in img's right ghost values
+        for (i=0; i<h; ++i)
+            img[(w+1)*(i+1)-1] = right[i];
+    }
+    if (!isUpEdge){
+        //send my topmost to my up neighbor
+        for (i=0; i<w; ++i)
+            up[i] = img[i];
+        MPI_Isend(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req[1]);
+    }
+    if (!isDownEdge){
+        //receive my down neighbor's topmost
+        MPI_Irecv(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req[1]);
+        // place the vector in img's bottom ghost values
+        for (i=0; i<w; ++i)
+            img[(h*(w+1))+i] = down[i];
+    }
 
     for (i =0; i<h*w; i++){
         dx[i] = 0;
@@ -24,7 +55,7 @@ void nabla(double *img, double *dx, double *dy,
 
     for (i = 0; i < w; i++){
         for (j = 0; j < h; j++){
-            int idx = j*w + i;
+            int idx = j*(w+1) + i;
             if (!(isRightEdge && i!=(w-1))){
                 dx[idx] -= img[idx];
                 dx[idx] += img[idx + 1];
@@ -40,11 +71,47 @@ void nabla(double *img, double *dx, double *dy,
 void nablaT(double *dx, double *dy, double *img,
             int h, int w, int rank, int xprocs, int yprocs){
 
-    int i, j, idx, isRightEdge, isDownEdge;
+    int i, j, idx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
+    double right[h], left[h], down[w], up[w];
+    MPI_Request req[2];
 
     // is my process responsible for a right or bottom edge?
-    isRightEdge = ((rank+1)%xprocs==0)?1:0;
-    isDownEdge  = ((rank+1)>(yprocs-1)*xprocs)?1:0;
+    isRightEdge = ((rank+1) %            xprocs==0)?1:0;
+    isLeftEdge  = ((rank  ) %            xprocs==0)?1:0;
+    isDownEdge  = ((rank+1) > (yprocs-1)*xprocs   )?1:0;
+    isUpEdge    = ((rank  ) <            xprocs   )?1:0;
+
+//TODO: send the Px, Py around
+//TODO: fix ghostidx here (use project's)
+//TODO: Rework update logic for local work only
+//TODO: update shrink similarly
+
+    if (!isLeftEdge){
+        //send my leftmost to my left neighbor
+        for (i=0; i<h; ++i)
+            left[i] = img[w*i];
+        MPI_Isend(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req[0]);
+    }
+    if (!isRightEdge){
+        //receive my right neighbor's leftmost
+        MPI_Irecv(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req[0]);
+        // place the vector in img's right ghost values
+        for (i=0; i<h; ++i)
+            img[(w+1)*(i+1)-1] = right[i];
+    }
+    if (!isUpEdge){
+        //send my upmost to my up neighbor
+        for (i=0; i<w; ++i)
+            up[i] = img[i];
+        MPI_Isend(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req[1]);
+    }
+    if (!isDownEdge){
+        //receive my down neighbor's topmost
+        MPI_Irecv(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req[1]);
+        // place the vector in img's bottom ghost values
+        for (i=0; i<w; ++i)
+            img[(h*(w+1))+i] = down[i];
+    }
 
     for (i = 0; i<h*w; i++)
         img[i] = 0;
@@ -69,18 +136,22 @@ void project(double *dx, double *dy,
              double r, double sigma, double *an, int h, int w){
 
     double sumofsq;
-    int i;
-    for (i = 0; i < h*w; i++){
-        dx[i] *= sigma; 
-        dx[i] += projx[i];
-        dy[i] *= sigma; 
-        dy[i] += projy[i];
-        sumofsq = pow(dx[i], 2) + pow(dy[i], 2);
-        an[i] = sqrt(sumofsq);
-        //an[i] = ((an[i]/r > 1.0) ? an[i]/r : 1.0);
-        an[i] = ((an[i] > 1.0) ? an[i] : 1.0);
-        projx[i] = dx[i] / an[i];
-        projy[i] = dy[i] / an[i];
+    int i, j, idx, ghostidx;
+    for (i = 0; i < h; i++){
+        for (j = 0; j < w; i++){
+            idx = j*w + i;
+            // Px, Py ghost indices are in the top row and left column!
+            ghostidx = (j+1)*(w+1)+i+1;
+            dx[idx] *= sigma; 
+            dx[idx] += projx[ghostidx];
+            dy[idx] *= sigma; 
+            dy[idx] += projy[ghostidx];
+            sumofsq = pow(dx[idx], 2) + pow(dy[idx], 2);
+            an[idx] = sqrt(sumofsq);
+            //an[i] = ((an[i]/r > 1.0) ? an[i]/r : 1.0);
+            an[idx] = ((an[idx] > 1.0) ? an[idx] : 1.0);
+            projx[ghostidx] = dx[idx] / an[idx];
+            projy[ghostidx] = dy[idx] / an[idx];
     }
     
 }
@@ -98,6 +169,7 @@ void shrink(double *proj, double *img, double *curr, double *sh,
         proj[i] *= -(1. * tau);
         proj[i] += curr[i];
         sh[i] = proj[i] + clip(img[i] - proj[i], -step, step);
+        // update curr[ent]
         curr[i] = sh[i] + theta * (sh[i] - curr[i]);
     }
 }
@@ -110,19 +182,29 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter,
     double theta = 1.0;
     double sigma;
     sigma = 1.0 / (float)(L2 * tau);
+    int idx, ghostidx;
 
     double *X, *X1, *Px, *Py, *nablaXx, *nablaXy, *nablaTP, *an;
  
-    posix_memalign((void**)&X      , 32, h*w*sizeof(double));
+    posix_memalign((void**)&X      , 32, (h+1)*(w+1)*sizeof(double));
     posix_memalign((void**)&X1     , 32, h*w*sizeof(double));
-    posix_memalign((void**)&Px     , 32, h*w*sizeof(double));
-    posix_memalign((void**)&Py     , 32, h*w*sizeof(double));
+    posix_memalign((void**)&Px     , 32, (h+1)*(w+1)*sizeof(double));
+    posix_memalign((void**)&Py     , 32, (h+1)*(w+1)*sizeof(double));
     posix_memalign((void**)&nablaXx, 32, h*w*sizeof(double));
     posix_memalign((void**)&nablaXy, 32, h*w*sizeof(double));
     posix_memalign((void**)&nablaTP, 32, h*w*sizeof(double));
     posix_memalign((void**)&an     , 32, h*w*sizeof(double));
 
-    memcpy(X, img, sizeof *X);
+    //memcpy(X, img, sizeof *X);
+    //Now that I have ghost values in X, I can't just memcpy!
+    //TODO: what if we memcpy and just fix when we reassemble parts in main?
+    for (int i = 0; i<w; ++i)
+        for (int j = 0; j<h; ++j){
+            idx = j*w+i;
+            ghostidx = j*(w+1)+i;
+            X[ghostidx] = img[idx];
+        }
+            
 
     // All the work occurs in this loop:
     nabla(X, Px, Py, h, w, rank, xprocs, yprocs);
@@ -138,7 +220,14 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter,
         if (X[z] < 0) {printf("%i: %.2f ", z, X[z]); X[z]=0.;}
     }
 
-    memcpy(filter, X, h*w* sizeof *X);
+    //memcpy(filter, X, h*w* sizeof *X);
+    //Ditto above! Need to account for ghost values
+    for (int i = 0; i<w; ++i)
+        for (int j = 0; j<h; ++j){
+            idx = j*w+i;
+            ghostidx = j*(w+1)+i;
+            filter[idx] = X[ghostidx];
+        }
 
     free(X);
     free(X1);
