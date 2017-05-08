@@ -5,6 +5,7 @@
 //#include "cl-helper.h"
 #include "../ppma_io.h"
 #include "tvl1-mpi.h"
+#include <inttypes.h>
 #include <mpi.h>
 
 void nabla(double *img, double *dx, double *dy, int h, int w){
@@ -178,8 +179,9 @@ void main(int argc, char *argv[]){
 
     int *r, *g, *b;
     int xsize, ysize, rgb_max, n, p, rank;
-    int sub_id, l_idx, g_idx, l_sizes[2];
-    int ii, jj, i, j, xs, ys;
+    int sub_id, l_idx, g_idx;
+    int ii, jj, i, j;
+    uint16_t l_sizes[2], xs, ys;
     double *gray, *filter, *mypiece;
 
 	MPI_Init(&argc, &argv);
@@ -188,6 +190,7 @@ void main(int argc, char *argv[]){
     //MPI_Get_processor_name(hostname, &len);
     MPI_Request req[p];
     MPI_Status status[p];
+    double *sd[p];
 
  //debug loop, attach with gdb --pid <number>
     if(999999==rank)
@@ -216,7 +219,6 @@ void main(int argc, char *argv[]){
         ppma_read(filename, &xsize, &ysize, &rgb_max, &r, &g, &b);
         printf("Done reading ``%s'' of size %dx%d\n", filename, xsize, ysize);
         
-        double *sd[p];
 
         // allocate CPU buffers
         posix_memalign((void**)&gray, 32, xsize*ysize*sizeof(double));
@@ -233,8 +235,9 @@ void main(int argc, char *argv[]){
         // calculate subdomain sizes
         int xover = xsize % xprocs;
         int yover = ysize % yprocs;
-        int lx = xsize / xprocs;
-        int ly = ysize / yprocs;
+        uint16_t lx = xsize / xprocs;
+        uint16_t ly = ysize / yprocs;
+        printf ("%i %i \n", lx, ly);
         if (xover)
             printf("dimensions not compatible with processor count; truncating %i columns\n", xover);
         if (yover)
@@ -258,25 +261,25 @@ void main(int argc, char *argv[]){
             }
         }
         
-        int sizes[2] = {lx, ly};
+        uint16_t sizes[2] = {lx, ly};
         // let processors know how much memory to allocate
         for (i = 0; i<p; ++i)
-            MPI_Isend(&sizes, 2, MPI_INT, i, 998, MPI_COMM_WORLD, &req);
+            MPI_Isend(&sizes, 2, MPI_UINT16_T, i, 998, MPI_COMM_WORLD, &req);
         // send subdomains to all processors
         for (i = 0; i<p; ++i)
-            MPI_Isend(sd[i], lx*ly, MPI_DOUBLE, i, 999, MPI_COMM_WORLD, &req);
+            MPI_Isend(sd[i], (int)(lx*ly), MPI_DOUBLE, i, 999, MPI_COMM_WORLD, &req);
     }       //end of root==r
 
     // Receive local dimension sizes
-    MPI_Irecv(&l_sizes, 2, MPI_INT, 0, 998, MPI_COMM_WORLD, &req);
+    MPI_Irecv(&l_sizes, 2, MPI_UINT16_T, 0, 998, MPI_COMM_WORLD, &req);
     xs = l_sizes[0];
     ys = l_sizes[1];
 
     posix_memalign((void**)&mypiece, 32, xs*ys*sizeof(double));
     // receive subdomains
-    MPI_Irecv(mypiece, xs*ys, MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &req);
+    MPI_Irecv(mypiece, (int)(xs*ys), MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &req);
 
-    //MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 
     printf("Rank %i got here!\n", rank);
     timestamp_type start, finish;
@@ -294,6 +297,8 @@ void main(int argc, char *argv[]){
         free(b);
         free(gray);
         free(filter);
+        for (i=0; i<p; ++i)
+            free(sd[i]);
     }
     
     MPI_Finalize();
