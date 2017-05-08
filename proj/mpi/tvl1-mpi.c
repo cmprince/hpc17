@@ -8,8 +8,15 @@
 #include <inttypes.h>
 #include <mpi.h>
 
-void nabla(double *img, double *dx, double *dy, int h, int w){
-    int i,j;    
+void nabla(double *img, double *dx, double *dy,
+           int h, int w, int rank, int xprocs, int yprocs){ 
+
+    int i, j, idx, isRightEdge, isDownEdge;    
+
+    // is my process responsible for a right or bottom edge?
+    isRightEdge = ((rank+1)%xprocs==0)?1:0;
+    isDownEdge  = ((rank+1)>(yprocs-1)*xprocs)?1:0;
+
     for (i =0; i<h*w; i++){
         dx[i] = 0;
         dy[i] = 0;
@@ -18,11 +25,11 @@ void nabla(double *img, double *dx, double *dy, int h, int w){
     for (i = 0; i < w; i++){
         for (j = 0; j < h; j++){
             int idx = j*w + i;
-            if (i!=(w-1)){
+            if (!(isRightEdge && i!=(w-1))){
                 dx[idx] -= img[idx];
                 dx[idx] += img[idx + 1];
             }
-            if (j!=(h-1)){
+            if (!(isDownEdge && j!=(h-1))){
                 dy[idx] -= img[idx];
                 dy[idx] += img[idx + w];
             }
@@ -30,8 +37,15 @@ void nabla(double *img, double *dx, double *dy, int h, int w){
     }
 }
 
-void nablaT(double *dx, double *dy, double *img, int h, int w){
-    int i,j,idx;    
+void nablaT(double *dx, double *dy, double *img,
+            int h, int w, int rank, int xprocs, int yprocs){
+
+    int i, j, idx, isRightEdge, isDownEdge;
+
+    // is my process responsible for a right or bottom edge?
+    isRightEdge = ((rank+1)%xprocs==0)?1:0;
+    isDownEdge  = ((rank+1)>(yprocs-1)*xprocs)?1:0;
+
     for (i = 0; i<h*w; i++)
         img[i] = 0;
     
@@ -88,7 +102,8 @@ void shrink(double *proj, double *img, double *curr, double *sh,
     }
 }
 
-void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, int w){
+void solve_tvl1(double *img, double *filter, double clambda, int iter, 
+                int h, int w, int rank, int xprocs, int yprocs){
 
     double L2 = 8.0;
     double tau = 0.02;
@@ -109,11 +124,12 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter, int h, in
 
     memcpy(X, img, sizeof *X);
 
-    nabla(X, Px, Py, h, w);
+    // All the work occurs in this loop:
+    nabla(X, Px, Py, h, w, rank, xprocs, yprocs);
     for (int t = 0; t < iter; t++){
-        nabla(X, nablaXx, nablaXy, h, w);
+        nabla(X, nablaXx, nablaXy, h, w, rank, xprocs, yprocs);
         project(nablaXx, nablaXy, Px, Py, 1.0, sigma, an, h, w);
-        nablaT(Px, Py, nablaTP, h, w);
+        nablaT(Px, Py, nablaTP, h, w, rank, xprocs, yprocs);
         shrink(nablaTP, img, X, X1, clambda, tau, theta, h, w);
     }
 
@@ -181,6 +197,7 @@ void main(int argc, char *argv[]){
     int xsize, ysize, rgb_max, n, p, rank;
     int sub_id, l_idx, g_idx;
     int ii, jj, i, j;
+    int isRightEdge, isDownEdge;
     uint16_t l_sizes[2], xs, ys;
     double *gray, *filter, *mypiece;
 
@@ -237,7 +254,6 @@ void main(int argc, char *argv[]){
         int yover = ysize % yprocs;
         uint16_t lx = xsize / xprocs;
         uint16_t ly = ysize / yprocs;
-        printf ("%i %i \n", lx, ly);
         if (xover)
             printf("dimensions not compatible with processor count; truncating %i columns\n", xover);
         if (yover)
@@ -276,19 +292,18 @@ void main(int argc, char *argv[]){
     ys = l_sizes[1];
 
     posix_memalign((void**)&mypiece, 32, xs*ys*sizeof(double));
+    
     // receive subdomains
     MPI_Irecv(mypiece, (int)(xs*ys), MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &req);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    printf("Rank %i got here!\n", rank);
     timestamp_type start, finish;
     get_timestamp(&start);
 
-
     //writeimg(gray, "gray.ppm", ysize, xsize, 1, 0);
 
-    solve_tvl1(mypiece, filter, 1, num_loops, ys, xs);
+    solve_tvl1(mypiece, filter, 1, num_loops, ys, xs, rank, xprocs, yprocs);
     writeimg(filter, "output_cpu.ppm", ys, xs, 1, 0);
 
     if (root==rank){
