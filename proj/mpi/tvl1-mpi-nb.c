@@ -493,10 +493,23 @@ int main(int argc, char *argv[]){
                 sub_id = jj*xprocs + ii;
                 for (i = 0; i<xs; ++i){
                     for (j = 0; j<ys; ++j){
-                        l_idx = j*xs + i;
-                        g_idx = (jj*ys+j)*xs*xprocs + ii*xs + i;
-                        gl_filter[g_idx] = sd[sub_id][l_idx];
+                        if (i+j !=0){
+                            l_idx = j*xs + i;
+                            g_idx = (jj*ys+j)*xs*xprocs + ii*xs + i;
+                            gl_filter[g_idx] = sd[sub_id][l_idx];
+                        }
                     }
+                }
+            }
+        }
+        
+        //For the (0,0) case:
+        for (i = 0; i<xs; ++i){
+            for (j = 0; j<ys; ++j){
+                if (i+j != 0){
+                    l_idx = j*xs + i;
+                    g_idx = j*xs*xprocs + i;
+                    gl_filter[g_idx] = filter[l_idx];
                 }
             }
         }
