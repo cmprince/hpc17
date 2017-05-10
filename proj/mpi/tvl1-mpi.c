@@ -9,11 +9,11 @@
 #include <mpi.h>
 
 void nabla(double *img, double *dx, double *dy,
-           int h, int w, int rank, int xprocs, int yprocs){ 
+           uint32_t h, uint32_t w, int rank, int xprocs, int yprocs){ 
 
     int i, j, idx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
     double right[h], left[h], down[w], up[w];
-    MPI_Request req[2];
+    MPI_Request req0, req1;
 
     // is my process responsible for a right or bottom edge?
     isRightEdge = ((rank+1) %            xprocs==0)?1:0;
@@ -21,15 +21,16 @@ void nabla(double *img, double *dx, double *dy,
     isDownEdge  = ((rank+1) > (yprocs-1)*xprocs   )?1:0;
     isUpEdge    = ((rank  ) <            xprocs   )?1:0;
 
+    printf("rank %i: r:%i, l:%i, d:%i, u:%i\n", rank, isRightEdge, isLeftEdge, isDownEdge, isUpEdge);
     if (!isLeftEdge){
         //send my leftmost to my left neighbor
         for (i=0; i<h; ++i)
             left[i] = img[w*i];
-        MPI_Isend(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req[0]);
+        MPI_Isend(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req0);
     }
     if (!isRightEdge){
         //receive my right neighbor's leftmost
-        MPI_Irecv(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req[0]);
+        MPI_Irecv(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req0);
         // place the vector in img's right ghost values
         for (i=0; i<h; ++i)
             img[(w+1)*(i+1)-1] = right[i];
@@ -38,11 +39,11 @@ void nabla(double *img, double *dx, double *dy,
         //send my topmost to my up neighbor
         for (i=0; i<w; ++i)
             up[i] = img[i];
-        MPI_Isend(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req[1]);
+        MPI_Isend(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req1);
     }
     if (!isDownEdge){
         //receive my down neighbor's topmost
-        MPI_Irecv(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req[1]);
+        MPI_Irecv(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req1);
         // place the vector in img's bottom ghost values
         for (i=0; i<w; ++i)
             img[(h*(w+1))+i] = down[i];
@@ -55,23 +56,23 @@ void nabla(double *img, double *dx, double *dy,
 
     for (i = 0; i < w; i++){
         for (j = 0; j < h; j++){
-            int idx = j*(w+1) + i;
+            idx = j*(w+1) + i;
             if (!(isRightEdge && i!=(w-1))){
                 dx[idx] -= img[idx];
                 dx[idx] += img[idx + 1];
             }
             if (!(isDownEdge && j!=(h-1))){
                 dy[idx] -= img[idx];
-                dy[idx] += img[idx + w];
+                dy[idx] += img[idx + w + 1];
             }
         }
     }
 }
 
 void nablaT(double *dx, double *dy, double *img,
-            int h, int w, int rank, int xprocs, int yprocs){
+            uint32_t h, uint32_t w, int rank, int xprocs, int yprocs){
 
-    int i, j, idx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
+    int i, j, idx, ghostidx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
     double right[h], left[h], down[w], up[w];
     MPI_Request req[2];
 
@@ -87,30 +88,30 @@ void nablaT(double *dx, double *dy, double *img,
 //TODO: update shrink similarly
 
     if (!isLeftEdge){
-        //send my leftmost to my left neighbor
+        //receive the righmost dx from my left neighbor
+        MPI_Irecv(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req[0]);
+        // place the vector in img's left ghost values
         for (i=0; i<h; ++i)
-            left[i] = img[w*i];
-        MPI_Isend(&left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req[0]);
+            dx[(w+1)*(i+1)] = left[i];
     }
     if (!isRightEdge){
-        //receive my right neighbor's leftmost
-        MPI_Irecv(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req[0]);
-        // place the vector in img's right ghost values
+        //send the rightmost dx to my right neighbor
         for (i=0; i<h; ++i)
-            img[(w+1)*(i+1)-1] = right[i];
+            right[i] = dx[(w+1)*(i+1)+w];
+        MPI_Isend(&right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req[0]);
     }
     if (!isUpEdge){
-        //send my upmost to my up neighbor
+        //receive my up neighbor's bottommost dy
+        MPI_Irecv(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req[1]);
+        // place the vector in img's top ghost values
         for (i=0; i<w; ++i)
-            up[i] = img[i];
-        MPI_Isend(&up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req[1]);
+            dy[i+1] = up[i];
     }
     if (!isDownEdge){
-        //receive my down neighbor's topmost
-        MPI_Irecv(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req[1]);
-        // place the vector in img's bottom ghost values
+        //send my bottommost dy to my down neighbor
         for (i=0; i<w; ++i)
-            img[(h*(w+1))+i] = down[i];
+            down[i] = dy[(w+1)*h+i+1];
+        MPI_Isend(&down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req[1]);
     }
 
     for (i = 0; i<h*w; i++)
@@ -119,13 +120,14 @@ void nablaT(double *dx, double *dy, double *img,
     for (i = 0; i < w; i++){
         for (j = 0; j < h; j++){
             idx = j * w + i;
-            if (i!=(w-1)){
-                img[idx]     -= dx[idx];
-                img[idx + 1] += dx[idx];
+            ghostidx = (j+1)*(w+1)+i+1;
+            if (!(isRightEdge && i!=0)){
+                img[idx] -= dx[ghostidx];
+                img[idx] += dx[ghostidx-1];
             }
-            if (j!=(h-1)){
-                img[idx]     -= dy[idx];
-                img[idx + w] += dy[idx];
+            if (!(isUpEdge && j!=0)){
+                img[idx] -= dy[ghostidx];
+                img[idx] += dy[ghostidx-w];
             }
         }
     }
@@ -133,12 +135,12 @@ void nablaT(double *dx, double *dy, double *img,
 
 void project(double *dx, double *dy, 
              double *projx, double *projy, 
-             double r, double sigma, double *an, int h, int w){
+             double r, double sigma, double *an, uint32_t h, uint32_t w){
 
     double sumofsq;
     int i, j, idx, ghostidx;
-    for (i = 0; i < h; i++){
-        for (j = 0; j < w; i++){
+    for (i = 0; i < w; i++){
+        for (j = 0; j < h; j++){
             idx = j*w + i;
             // Px, Py ghost indices are in the top row and left column!
             ghostidx = (j+1)*(w+1)+i+1;
@@ -162,7 +164,7 @@ double clip(float n, float low, float high){
 }
 
 void shrink(double *proj, double *img, double *curr, double *sh, 
-            double clambda, double tau, double theta, int h, int w){
+            double clambda, double tau, double theta, uint32_t h, uint32_t w){
 
     double step = clambda*tau;
     int i;
@@ -176,7 +178,7 @@ void shrink(double *proj, double *img, double *curr, double *sh,
 }
 
 void solve_tvl1(double *img, double *filter, double clambda, int iter, 
-                int h, int w, int rank, int xprocs, int yprocs){
+                uint32_t h, uint32_t w, int rank, int xprocs, int yprocs){
 
     double L2 = 8.0;
     double tau = 0.02;
@@ -233,11 +235,11 @@ void solve_tvl1(double *img, double *filter, double clambda, int iter,
     free(X);
     free(X1);
     free(Px);
-    free(Py);
-    free(nablaXx);
-    free(nablaXy);
-    free(nablaTP);
-    free(an);
+    //free(Py);
+    //free(nablaXx);
+    //free(nablaXy);
+    //free(nablaTP);
+    //free(an);
 }
 
 void writeimg(double *img, char *fname, int h, int w, double scale, int offset){
@@ -287,15 +289,14 @@ void main(int argc, char *argv[]){
     int xsize, ysize, rgb_max, n, p, rank;
     int sub_id, l_idx, g_idx;
     int ii, jj, i, j;
-    int isRightEdge, isDownEdge;
-    uint16_t l_sizes[2], xs, ys;
+    uint32_t l_sizes[2], xs, ys;
     double *gray, *filter, *mypiece;
 
 	MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     //MPI_Get_processor_name(hostname, &len);
-    MPI_Request req[p];
+    MPI_Request req[2*p];
     MPI_Status status[p];
     double *sd[p];
 
@@ -338,12 +339,12 @@ void main(int argc, char *argv[]){
         for(n = 0; n < xsize*ysize; ++n) {
           gray[n] = (0.21f*r[n] + 0.72f*g[n] + 0.07f*b[n])*rgbmax_inv;
         }
-
+        
         // calculate subdomain sizes
         int xover = xsize % xprocs;
         int yover = ysize % yprocs;
-        uint16_t lx = xsize / xprocs;
-        uint16_t ly = ysize / yprocs;
+        uint32_t lx = xsize / xprocs;
+        uint32_t ly = ysize / yprocs;
         if (xover)
             printf("dimensions not compatible with processor count; truncating %i columns\n", xover);
         if (yover)
@@ -367,24 +368,24 @@ void main(int argc, char *argv[]){
             }
         }
         
-        uint16_t sizes[2] = {lx, ly};
+        uint32_t sizes[2] = {lx, ly};
         // let processors know how much memory to allocate
         for (i = 0; i<p; ++i)
-            MPI_Isend(&sizes, 2, MPI_UINT16_T, i, 998, MPI_COMM_WORLD, &req);
+            MPI_Isend(&sizes, 2, MPI_UINT16_T, i, 998, MPI_COMM_WORLD, &req[i]);
         // send subdomains to all processors
         for (i = 0; i<p; ++i)
-            MPI_Isend(sd[i], (int)(lx*ly), MPI_DOUBLE, i, 999, MPI_COMM_WORLD, &req);
+            MPI_Isend(sd[i], (int)(lx*ly), MPI_DOUBLE, i, 999, MPI_COMM_WORLD, &req[i]);
     }       //end of root==r
 
     // Receive local dimension sizes
-    MPI_Irecv(&l_sizes, 2, MPI_UINT16_T, 0, 998, MPI_COMM_WORLD, &req);
+    MPI_Irecv(&l_sizes, 2, MPI_UINT16_T, 0, 998, MPI_COMM_WORLD, &req[p+i]);
     xs = l_sizes[0];
     ys = l_sizes[1];
 
     posix_memalign((void**)&mypiece, 32, xs*ys*sizeof(double));
     
     // receive subdomains
-    MPI_Irecv(mypiece, (int)(xs*ys), MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &req);
+    MPI_Irecv(mypiece, (int)(xs*ys), MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &req[p+i]);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -394,6 +395,7 @@ void main(int argc, char *argv[]){
     //writeimg(gray, "gray.ppm", ysize, xsize, 1, 0);
 
     solve_tvl1(mypiece, filter, 1, num_loops, ys, xs, rank, xprocs, yprocs);
+printf("%i got here\n", rank);
     writeimg(filter, "output_cpu.ppm", ys, xs, 1, 0);
 
     if (root==rank){
