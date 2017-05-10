@@ -28,12 +28,6 @@ void nabla(double *img, double *dx, double *dy,
     isLeftEdge  = ((rank  ) %            xprocs==0)?1:0;
     isDownEdge  = ((rank+1) > (yprocs-1)*xprocs   )?1:0;
     isUpEdge    = ((rank  ) <            xprocs   )?1:0;
-printf("got here!");
-
-if (isLeftEdge)
-    printf("left\t");
-if (isRightEdge)
-    printf("right\t");
 
     //printf("rank %i: r:%i, l:%i, d:%i, u:%i\n", rank, isRightEdge, isLeftEdge, isDownEdge, isUpEdge);
     if (!(isLeftEdge==1)){
@@ -61,6 +55,7 @@ if (isRightEdge)
         dx[i] = 0;
         dy[i] = 0;
     }
+
     if (!(isLeftEdge==1))
         MPI_Wait(&req0, MPI_STATUS_IGNORE);
     if (!(isRightEdge==1)){
@@ -103,7 +98,11 @@ void nablaT(double *dx, double *dy, double *img,
             uint32_t h, uint32_t w, int rank, uint32_t xprocs, uint32_t yprocs){
 
     int i, j, idx, ghostidx, isRightEdge, isLeftEdge, isDownEdge, isUpEdge;
-    double right[h], left[h], down[w], up[w];
+    double *right, *left, *down, *up;
+    right = malloc(h* sizeof right);
+    left  = malloc(h* sizeof left);
+    up    = malloc(w* sizeof up);
+    down  = malloc(w* sizeof up);
     MPI_Request req0, req1, req2, req3;
 
     // is my process responsible for a right or bottom edge?
@@ -112,50 +111,45 @@ void nablaT(double *dx, double *dy, double *img,
     isDownEdge  = ((rank+1) > (yprocs-1)*xprocs   )?1:0;
     isUpEdge    = ((rank  ) <            xprocs   )?1:0;
 
-//TODO: send the Px, Py around
-//TODO: fix ghostidx here (use project's)
-//TODO: Rework update logic for local work only
-//TODO: update shrink similarly
-
+    for (i = 0; i<(h+1)*(w+1); i++)
+        img[i] = 0;
+    
     if (!isLeftEdge){
         //receive the righmost dx from my left neighbor
-        MPI_Irecv(&left, w, MPI_DOUBLE, rank-1, 102, MPI_COMM_WORLD, &req0);
+        MPI_Irecv(left, h, MPI_DOUBLE, rank-1, 100, MPI_COMM_WORLD, &req0);
     }
     if (!isRightEdge){
         //send the rightmost dx to my right neighbor
         for (i=0; i<h; ++i)
             right[i] = dx[(w+1)*(i+1)-1];
-        MPI_Isend(&right, w, MPI_DOUBLE, rank+1, 102, MPI_COMM_WORLD, &req1);
+        MPI_Isend(right, h, MPI_DOUBLE, rank+1, 100, MPI_COMM_WORLD, &req1);
     }
     if (!isUpEdge){
         //receive my up neighbor's bottommost dy
-        MPI_Irecv(&up, w, MPI_DOUBLE, rank-xprocs, 103, MPI_COMM_WORLD, &req2);
+        MPI_Irecv(up, w, MPI_DOUBLE, rank-xprocs, 100, MPI_COMM_WORLD, &req2);
     }
     if (!isDownEdge){
         //send my bottommost dy to my down neighbor
         for (i=0; i<w; ++i)
             down[i] = dy[(w+1)*h+i+1];
-        MPI_Isend(&down, w, MPI_DOUBLE, rank+xprocs, 103, MPI_COMM_WORLD, &req3);
+        MPI_Isend(down, w, MPI_DOUBLE, rank+xprocs, 100, MPI_COMM_WORLD, &req3);
     }
-
-    for (i = 0; i<(h+1)*(w+1); i++)
-        img[i] = 0;
     
-    if (!isLeftEdge)
+    if (!isRightEdge)
+        MPI_Wait(&req1, MPI_STATUS_IGNORE);
+    if (!isLeftEdge){
         MPI_Wait(&req0, MPI_STATUS_IGNORE);
         // place the vector in img's left ghost values
         for (i=0; i<h; ++i)
             dx[(w+1)*(i+1)] = left[i];
-    if (!isRightEdge){
-        MPI_Wait(&req1, MPI_STATUS_IGNORE);
     }
-    if (!isUpEdge)
+    if (!isDownEdge)
+        MPI_Wait(&req3, MPI_STATUS_IGNORE);
+    if (!isUpEdge){
         MPI_Wait(&req2, MPI_STATUS_IGNORE);
         // place the vector in img's top ghost values
         for (i=0; i<w; ++i)
             dy[i+1] = up[i];
-    if (!isDownEdge){
-        MPI_Wait(&req3, MPI_STATUS_IGNORE);
     }
     
     for (i = 0; i < w; i++){
@@ -172,6 +166,10 @@ void nablaT(double *dx, double *dy, double *img,
             }
         }
     }
+    free(left);
+    free(right);
+    free(up);
+    free(down);
 }
 
 void project(double *dx, double *dy, 
