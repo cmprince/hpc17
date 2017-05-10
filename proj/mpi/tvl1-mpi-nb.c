@@ -309,7 +309,7 @@ void writeimg(double *img, char *fname, int h, int w, double scale, int offset){
     int *grn = malloc(h*w*sizeof grn);
     int *blu = malloc(h*w*sizeof blu);
 
-    printf("Writing cpu filtered image\n");
+//    printf("Writing cpu filtered image\n");
     for(n = 0; n < h*w; ++n) {
       red[n] = (int)(img[n] * rgb_max * scale + offset);
       grn[n] = (int)(img[n] * rgb_max * scale + offset);
@@ -344,7 +344,7 @@ int main(int argc, char *argv[]){
     int sub_id, l_idx, g_idx;
     int ii, jj, i, j;
     uint32_t l_sizes[2], xs, ys;
-    double *gray, *filter, *mypiece;
+    double *gray, *filter, *mypiece, *gl_filter;
 
 	MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
@@ -405,7 +405,9 @@ int main(int argc, char *argv[]){
         // allocate subdomain buffers
         for (int i = 0; i<p; ++i)
             posix_memalign((void**)&sd[i], 32, lx*ly*sizeof(double));
-
+        // allocate global filter buffer (may be slightly smaller than gray)
+        posix_memalign((void**)&gl_filter, 32, (xsize-xover)*(ysize-yover)*sizeof(double));
+            
         // create subdomains
         for (ii = 0; ii<xprocs; ++ii){
             for (jj = 0; jj<yprocs; ++jj){
@@ -457,7 +459,7 @@ int main(int argc, char *argv[]){
         if (root==rank){
         // send subdomains to all processors
             MPI_Send(sd[i], xs*ys, MPI_DOUBLE, i, 999, MPI_COMM_WORLD); //, &status[i]);
-        }       //end of root==r
+        }
         if  (i==rank){
             // receive subdomains
             MPI_Recv(mypiece, xs*ys, MPI_DOUBLE, 0, 999, MPI_COMM_WORLD, &status[rank]);
@@ -468,16 +470,46 @@ int main(int argc, char *argv[]){
     timestamp_type start, finish;
     get_timestamp(&start);
 
-    writeimg(mypiece, "mypiece.ppm", ys, xs, 1, 0);
+//    writeimg(mypiece, "mypiece.ppm", ys, xs, 1, 0);
 
     solve_tvl1(mypiece, filter, 1, num_loops, ys, xs, rank, xprocs, yprocs);
-    writeimg(filter, "output_cpu.ppm", ys, xs, 1, 0);
+    
+    for (i=1; i<p; ++i){
+        if (root==rank){
+        // receive filtered subdomains from all processors (reuse the sd buffers)
+            MPI_Recv(sd[i], xs*ys, MPI_DOUBLE, i, 999, MPI_COMM_WORLD, &status[rank]);
+        }       
+        if  (i==rank){
+            // send filtered subdomain to the root processor
+            MPI_Send(filter, xs*ys, MPI_DOUBLE, 0, 999, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    // stitch everything back together
+    if (root==rank){
+        for (ii = 0; ii<xprocs; ++ii){
+            for (jj = 0; jj<yprocs; ++jj){
+                sub_id = jj*xprocs + ii;
+                for (i = 0; i<xs; ++i){
+                    for (j = 0; j<ys; ++j){
+                        l_idx = j*xs + i;
+                        g_idx = (jj*ys+j)*xs*xprocs + ii*xs + i;
+                        gl_filter[g_idx] = sd[sub_id][l_idx];
+                    }
+                }
+            }
+        }
+        writeimg(gl_filter, "output_cpu.ppm", ys*yprocs, xs*xprocs, 1, 0);
+    }
+
 
     if (root==rank){
         free(r);
         free(g);
         free(b);
         free(gray);
+        free(gl_filter);
         for (i=0; i<p; ++i)
             free(sd[i]);
     }
