@@ -357,7 +357,7 @@ int main(int argc, char *argv[]){
     double *sd[p];
 
  //debug loop, attach with gdb --pid <number>
-    if(9==rank)
+    if(999999==rank)
     {
         i = 0;
         char hostname[256];
