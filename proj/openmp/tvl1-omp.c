@@ -204,14 +204,16 @@ void writeimg(double *img, char *fname, int h, int w, double scale, int offset){
 
 void main(int argc, char *argv[]){
 
-    if(argc != 3)
+    if(argc != 4)
     {
-      fprintf(stderr, "Usage: %s image.ppm num_loops\n", argv[0]);
+      fprintf(stderr, "Usage: %s image.ppm num_loops num_threads\n", argv[0]);
       abort();
     }
   
     const char* filename = argv[1];
     const int num_loops = atoi(argv[2]);
+    const int num_threads = atoi(argv[3]);
+    omp_set_num_threads(num_threads);
     int *r, *g, *b;
     int xsize, ysize, rgb_max;
     int n;
