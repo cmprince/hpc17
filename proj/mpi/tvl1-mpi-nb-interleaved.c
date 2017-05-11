@@ -65,12 +65,14 @@ void nabla(double *img, double *dx, double *dy,
         for (j = 0; j < h-1; j++){
             idx = j*(w+1) + i;
             ghostidx = (j+1)*(w+1)+i+1;
-            //if (!(isRightEdge && i==w)){
+            if (!(isRightEdge && i==w)){
                 dx[ghostidx] -= img[idx];
                 dx[ghostidx] += img[idx + 1];
-            //if (!(isDownEdge && j==h)){
+            }
+            if (!(isDownEdge && j==h)){
                 dy[ghostidx] -= img[idx];
                 dy[ghostidx] += img[idx + w + 1];
+            }
         }
     }
 
@@ -83,6 +85,8 @@ void nabla(double *img, double *dx, double *dy,
             img[(h*(w+1))+i] = down[i];
             dy[ghostidx] -= img[idx];
             dy[ghostidx] += img[idx + w + 1];
+            dx[ghostidx] -= img[idx];
+            dx[ghostidx] += img[idx + 1];
         }
     }
     if (!(isRightEdge==1)){
@@ -94,6 +98,8 @@ void nabla(double *img, double *dx, double *dy,
             ghostidx = (j+1)*(w+1)+w;
             dx[ghostidx] -= img[idx];
             dx[ghostidx] += img[idx + 1];
+            dy[ghostidx] -= img[idx];
+            dy[ghostidx] += img[idx + w + 1];
         }
     }
     
@@ -146,35 +152,49 @@ void nablaT(double *dx, double *dy, double *img,
     
     if (!isRightEdge)
         MPI_Wait(&req1, MPI_STATUS_IGNORE);
-    if (!isLeftEdge){
-        MPI_Wait(&req0, MPI_STATUS_IGNORE);
-        // place the vector in img's left ghost values
-        for (i=0; i<h; ++i)
-            dx[(w+1)*(i+1)] = left[i];
-    }
     if (!isDownEdge)
         MPI_Wait(&req3, MPI_STATUS_IGNORE);
-    if (!isUpEdge){
-        MPI_Wait(&req2, MPI_STATUS_IGNORE);
-        // place the vector in img's top ghost values
-        for (i=0; i<w; ++i)
-            dy[i+1] = up[i];
-    }
     
-    for (i = 0; i < w; i++){
-        for (j = 0; j < h; j++){
+    for (i = 1; i < w; i++){
+        for (j = 1; j < h; j++){
             idx = j * (w+1) + i;
             ghostidx = (j+1)*(w+1)+i+1;
-            if (!(isRightEdge && i==0)){
+            if (!(isLeftEdge && i==0)){
                 img[idx] -= dx[ghostidx];
                 img[idx] += dx[ghostidx-1];
             }
             if (!(isUpEdge && j==0)){
                 img[idx] -= dy[ghostidx];
-                img[idx] += dy[ghostidx-w];
+                img[idx] += dy[ghostidx-(w+1)];
             }
         }
     }
+
+    if (!isLeftEdge){
+        MPI_Wait(&req0, MPI_STATUS_IGNORE);
+        // place the vector in img's left ghost values
+        for (j=0; j<h; ++j)
+            dx[(w+1)*(j+1)] = left[j];
+            idx = j * (w+1);
+            ghostidx = (j+1)*(w+1)+1;
+            img[idx] -= dx[ghostidx];
+            img[idx] += dx[ghostidx-1];
+            img[idx] -= dy[ghostidx];
+            img[idx] += dy[ghostidx-(w+1)];
+    }
+    if (!isUpEdge){
+        MPI_Wait(&req2, MPI_STATUS_IGNORE);
+        // place the vector in img's top ghost values
+        for (i=0; i<w; ++i)
+            dy[i+1] = up[i];
+            idx = i;
+            ghostidx = (w+1)+i+1;
+            img[idx] -= dy[ghostidx];
+            img[idx] += dy[ghostidx-(w+1)];
+            img[idx] -= dx[ghostidx];
+            img[idx] += dx[ghostidx-1];
+    }
+
     free(left);
     free(right);
     free(up);

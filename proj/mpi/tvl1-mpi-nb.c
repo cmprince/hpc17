@@ -88,6 +88,7 @@ void nabla(double *img, double *dx, double *dy,
             }
         }
     }
+
     free(left);
     free(right);
     free(up);
@@ -156,13 +157,13 @@ void nablaT(double *dx, double *dy, double *img,
         for (j = 0; j < h; j++){
             idx = j * (w+1) + i;
             ghostidx = (j+1)*(w+1)+i+1;
-            if (!(isRightEdge && i==0)){
+            if (!(isLeftEdge && i==0)){
                 img[idx] -= dx[ghostidx];
                 img[idx] += dx[ghostidx-1];
             }
             if (!(isUpEdge && j==0)){
                 img[idx] -= dy[ghostidx];
-                img[idx] += dy[ghostidx-w];
+                img[idx] += dy[ghostidx-(w+1)];
             }
         }
     }
