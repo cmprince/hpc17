@@ -10,10 +10,49 @@
 #include "util.h"
 #include <string.h>
 
+//void jacobi_iteration(double ***u, double ***uu, int N, int M){
+//    /* Jacobi iterations:
+//     * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
+//     *
+//     * With
+//     * a_ij = 2, i=j
+//     * a_ij = -1, (i-j)^2 = 1
+//     * a_ij = 0 otherwise
+//     * 
+//     * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
+//     */
+//    int i, j;
+//#pragma omp parallel for shared(u, uu, M, N) private (i, j)
+//    for (i=1; i<N+1; i++)
+//        for (j=1; j<M+1; j++)
+//            (*uu)[i][j] = 0.25*(1/(float)(N*M) + ((*u)[i-1][j] + (*u)[i+1][j] + \
+//                        (*u)[i][j-1] + (*u)[i][j+1]));
+//}
+//
+//void laplace_L2_norm(double ***v, int N, int M, double *l2){
+//
+//    //Compute sum of squares of elements in Au - f
+//    //Note term 1/h^2 (=N^2) in matrix A.
+// 
+//    int i, j;
+//    double d;
+//    sumsq=0.;
+//
+//#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
+//    for (i=1; i<N+1; i++)
+//        for (j=1; j<M+1; j++){
+//            d = ((-(*v)[i-1][j] - (*v)[i+1][j] - (*v)[i][j-1] - (*v)[i][j+1] + 4*(*v)[i][j])*(float)(N*M) - 1);
+//            sumsq += d*d;
+//        }
+//    //The L2 norm is the square root of this sum:
+//    //
+//    *l2 = sqrt(sumsq);
+//}
+
 /* compuate norm of residual */
-double compute_norm(double *u, int N)
+double compute_norm(double **u, int N)
 {
-    int i;
+    int i, j;
     double norm = 0.0;
     for (i = 0; i <= N; i++)
         for (j = 0; j <= N; j++)
@@ -22,10 +61,10 @@ double compute_norm(double *u, int N)
 }
 
 /* set vector to zero */
-void set_zero (double *u, int N) {
-    int i;
+void set_zero (double **u, int N) {
+    int i, j;
     for (i = 0; i <= N; i++)
-        for (i = 0; i <= N; i++)
+        for (j = 0; j <= N; j++)
             u[i][j] = 0.0;
 }
 
@@ -40,8 +79,8 @@ void output_to_screen (double *u, int N) {
 /* coarsen uf from length N+1 to lenght N/2+1
    assuming N = 2^l
    */
-void coarsen(double *uf, double *uc, int N) {
-    int ic;
+void coarsen(double **uf, double **uc, int N) {
+    int ic, jc;
     for (ic = 1; ic < N/2; ++ic)
         for (jc = 1; jc < N/2; ++jc){
             uc[ic][jc] =  0.25 * uf[2*ic][2*jc]
@@ -58,14 +97,21 @@ void coarsen(double *uf, double *uc, int N) {
 /* refine u from length N+1 to lenght 2*N+1
    assuming N = 2^l, and add to existing uf
    */
-void refine_and_add(double *u, double *uf, int N)
+void refine_and_add(double **u, double **uf, int N)
 {
-    int i;
-    uf[1] += 0.5 * (u[0] + u[1]);
+    int i,j;
+    //uf[1] += 0.5 * (u[0] + u[1]);
     for (i = 1; i < N; ++i) {
         for (j = 1; j < N; ++j) {
             uf[2*i][2*j] += u[i][j];
             uf[2*i+1][2*j] += 0.5 * (u[i][j]);
+            uf[2*i-1][2*j] += 0.5 * (u[i][j]);
+            uf[2*i][2*j-1] += 0.5 * (u[i][j]);
+            uf[2*i][2*j+1] += 0.5 * (u[i][j]);
+            uf[2*i+1][2*j+1] += 0.25 * (u[i][j]);
+            uf[2*i-1][2*j+1] += 0.25 * (u[i][j]);
+            uf[2*i+1][2*j-1] += 0.25 * (u[i][j]);
+            uf[2*i-1][2*j-1] += 0.25 * (u[i][j]);
         }
     }
 }
@@ -73,9 +119,10 @@ void refine_and_add(double *u, double *uf, int N)
 /* compute residual vector */
 void compute_residual(double *u, double *rhs, double *res, int N, double invhsq)
 {
-    int i;
+    int i,j;
     for (i = 1; i < N; i++)
-        res[i] = (rhs[i] - (2.*u[i] - u[i-1] - u[i+1]) * invhsq);
+        for (j = 1; j < N; j++)
+            res[i][j] = (rhs[i] - (4.*u[i][j] - u[i-1][j] - u[i+1][j] - u[i][j-1] - u[i][j+1]) * invhsq);
 }
 
 
@@ -91,18 +138,24 @@ void compute_and_coarsen_residual(double *u, double *rhs, double *resc,
 
 
 /* Perform Jacobi iterations on u */
-void jacobi(double *u, double *rhs, int N, double hsq, int ssteps)
+void jacobi(double **u, double *rhs, int N, double hsq, int ssteps)
 {
-    int i, j;
+    int i, j, s;
     /* Jacobi damping parameter -- plays an important role in MG */
     double omega = 2./3.;
-    double *unew = calloc(sizeof(double), N+1);
-    for (j = 0; j < ssteps; ++j) {
+    double **unew = calloc(sizeof(double), N+1);
+    for (i = 0; i < N+1; i++) {*unew[i] = calloc(sizeof(double), N+1);}
+    for (s = 0; s < ssteps; ++s) {
         for (i = 1; i < N; i++){
-            unew[i]  = u[i] +  omega * 0.5 * (hsq*rhs[i] + u[i - 1] + u[i + 1] - 2*u[i]);
+            for (j = 1; j < N; j++){
+                //unew[i]  = u[i] +  omega * 0.5 * (hsq*rhs[i] + u[i - 1] + u[i + 1] - 2*u[i]);
+                unew[i][j] = u[i][j] + omega * 0.25 * (hsq * rhs[i] + u[i-1][j] + u[i+1][j] + \
+                            u[i][j-1] + u[i][j+1]);
+            }
         }
         memcpy(u, unew, (N+1)*sizeof(double));
     }
+    for (i = 0; i< N+1; i++) {free(unew[i]);}
     free (unew);
 }
 
