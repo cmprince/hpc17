@@ -6,48 +6,11 @@
  * Author: Georg Stadler, April 2017
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include "util.h"
 #include <string.h>
 
-//void jacobi_iteration(double ***u, double ***uu, int N, int M){
-//    /* Jacobi iterations:
-//     * u_i[k+1] = 1/a_ii (f_i - sum(a_ij*u_j[k]; j != i))
-//     *
-//     * With
-//     * a_ij = 2, i=j
-//     * a_ij = -1, (i-j)^2 = 1
-//     * a_ij = 0 otherwise
-//     * 
-//     * ==> u_i[k+1] = 1/2 (f_i + u_(i-1)[k] + u_(i+1)[k]) 
-//     */
-//    int i, j;
-//#pragma omp parallel for shared(u, uu, M, N) private (i, j)
-//    for (i=1; i<N+1; i++)
-//        for (j=1; j<M+1; j++)
-//            (*uu)[i][j] = 0.25*(1/(float)(N*M) + ((*u)[i-1][j] + (*u)[i+1][j] + \
-//                        (*u)[i][j-1] + (*u)[i][j+1]));
-//}
-//
-//void laplace_L2_norm(double ***v, int N, int M, double *l2){
-//
-//    //Compute sum of squares of elements in Au - f
-//    //Note term 1/h^2 (=N^2) in matrix A.
-// 
-//    int i, j;
-//    double d;
-//    sumsq=0.;
-//
-//#pragma omp parallel for reduction(+: sumsq) private(i, j, d) shared(N, M, v)
-//    for (i=1; i<N+1; i++)
-//        for (j=1; j<M+1; j++){
-//            d = ((-(*v)[i-1][j] - (*v)[i+1][j] - (*v)[i][j-1] - (*v)[i][j+1] + 4*(*v)[i][j])*(float)(N*M) - 1);
-//            sumsq += d*d;
-//        }
-//    //The L2 norm is the square root of this sum:
-//    //
-//    *l2 = sqrt(sumsq);
-//}
 
 /* compuate norm of residual */
 double compute_norm(double **u, int N)
@@ -117,52 +80,67 @@ void refine_and_add(double **u, double **uf, int N)
 }
 
 /* compute residual vector */
-void compute_residual(double *u, double *rhs, double *res, int N, double invhsq)
+void compute_residual(double **u, double **rhs, double **res, int N, double invhsq)
 {
     int i,j;
     for (i = 1; i < N; i++)
         for (j = 1; j < N; j++)
-            res[i][j] = (rhs[i] - (4.*u[i][j] - u[i-1][j] - u[i+1][j] - u[i][j-1] - u[i][j+1]) * invhsq);
+            res[i][j] = (rhs[i][j] - (4.*u[i][j] - u[i-1][j] - u[i+1][j] - u[i][j-1] - u[i][j+1]) * invhsq);
 }
 
 
 /* compute residual and coarsen */
-void compute_and_coarsen_residual(double *u, double *rhs, double *resc,
+void compute_and_coarsen_residual(double **u, double **rhs, double **resc,
         int N, double invhsq)
 {
-    double *resf = calloc(sizeof(double), N+1);
+    double **resf;
+    resf = calloc(N + 1, sizeof (double*));
+    for (int i = 0; i< N+1; ++i){
+        resf[i] = calloc(N + 1, sizeof(double));
+    }
     compute_residual(u, rhs, resf, N, invhsq);
     coarsen(resf, resc, N);
+    for (int i = 0; i< N+1; ++i) {
+        free (resf[i]);
+    } 
     free(resf);
+
 }
 
 
 /* Perform Jacobi iterations on u */
-void jacobi(double **u, double *rhs, int N, double hsq, int ssteps)
+void jacobi(double **u, double **rhs, int N, double hsq, int ssteps)
 {
     int i, j, s;
     /* Jacobi damping parameter -- plays an important role in MG */
     double omega = 2./3.;
-    double **unew = calloc(sizeof(double), N+1);
-    for (i = 0; i < N+1; i++) {*unew[i] = calloc(sizeof(double), N+1);}
+    double **unew = calloc(sizeof(double*), N+1);
+    for (i = 0; i < N+1; i++) {
+        unew[i] = calloc(sizeof(double), N+1);
+    }
     for (s = 0; s < ssteps; ++s) {
         for (i = 1; i < N; i++){
             for (j = 1; j < N; j++){
                 //unew[i]  = u[i] +  omega * 0.5 * (hsq*rhs[i] + u[i - 1] + u[i + 1] - 2*u[i]);
-                unew[i][j] = u[i][j] + omega * 0.25 * (hsq * rhs[i] + u[i-1][j] + u[i+1][j] + \
+                unew[i][j] = u[i][j] + omega * 0.25 * (hsq * rhs[i][j] + u[i-1][j] + u[i+1][j] + \
                             u[i][j-1] + u[i][j+1]);
             }
         }
-        memcpy(u, unew, (N+1)*sizeof(double));
+//        memcpy(u, unew, (N+1)*(N+1)*sizeof(double));
+        for (i = 1; i<N; ++i)
+            for (j=1; j<N; ++j)
+                u[i][j] = unew[i][j];
     }
-    for (i = 0; i< N+1; i++) {free(unew[i]);}
+    for (i = 0; i< N+1; i++) {
+        free (unew[i]);
+    }
     free (unew);
 }
 
 
 int main(int argc, char * argv[])
 {
-    int i, Nfine, l, iter, max_iters, levels, ssteps = 3;
+    int i, j, Nfine, l, iter, max_iters, levels, ssteps = 3;
 
     if (argc < 3 || argc > 4) {
         fprintf(stderr, "Usage: ./multigrid_1d Nfine maxiter [s-steps]\n");
@@ -186,27 +164,35 @@ int main(int argc, char * argv[])
     get_timestamp(&time1);
 
     /* Allocation of vectors, including left and right bdry points */
-    double *u[levels], *rhs[levels];
+    double **u[levels], **rhs[levels];
     /* N, h*h and 1/(h*h) on each level */
-    int *N = (int*) calloc(sizeof(int), levels);
-    double *invhsq = (double* ) calloc(sizeof(double), levels);
-    double *hsq = (double* ) calloc(sizeof(double), levels);
-    double * res = (double *) calloc(sizeof(double), Nfine+1);
+    int *N = calloc(levels, sizeof(int));
+    double *invhsq = calloc(levels, sizeof(double));
+    double *hsq = calloc(levels, sizeof(double));
+    double **res = calloc(Nfine + 1, sizeof(double));
+    for (int i = 0; i<Nfine+1; ++i)
+        res[i] = calloc(Nfine + 1, sizeof (double));
     for (l = 0; l < levels; ++l) {
         N[l] = Nfine / (int) pow(2,l);
         double h = 1.0 / N[l];
         hsq[l] = h * h;
         printf("MG level %2d, N = %8d\n", l, N[l]);
         invhsq[l] = 1.0 / hsq[l];
-        u[l]    = (double *) calloc(sizeof(double), N[l]+1);
-        rhs[l] = (double *) calloc(sizeof(double), N[l]+1);
+        u[l]    = calloc(N[l]+1, sizeof (double*));
+        for (int i = 0; i<N[l]+1; ++i)
+            u[l][i] = calloc(N[l] + 1, sizeof (double));
+        rhs[l] = calloc(N[l] + 1, sizeof (double*));
+        for (int i = 0; i<N[l]+1; ++i)
+            rhs[l][i] = calloc(N[l] + 1, sizeof (double));
     }
     /* rhs on finest mesh */
     for (i = 0; i <= N[0]; ++i) {
-        rhs[0][i] = 1.0;
+        for (j = 0; j <= N[0]; ++j) {
+            rhs[0][i][j] = 1.0;
+        }
     }
     /* set boundary values (unnecessary if calloc is used) */
-    u[0][0] = u[0][N[0]] = 0.0;
+    //u[0][0] = u[0][N[0]] = 0.0;
     double res_norm, res0_norm, tol = 1e-6;
 
     /* initial residual norm */
