@@ -46,12 +46,12 @@ void coarsen(double **uf, double **uc, int N) {
     int ic, jc;
     for (ic = 1; ic < N/2; ++ic)
         for (jc = 1; jc < N/2; ++jc){
-            uc[ic][jc] =  0.25 * uf[2*ic][2*jc]
-                        + 0.125  * (                       uf[2*ic-1][2*jc  ]
-                                    + uf[2*ic  ][2*jc-1]                      + uf[2*ic  ][2*jc+1]
-                                                         + uf[2*ic+1][2*jc  ]                     )
-                        + 0.0625 * (  uf[2*ic-1][2*jc-1]                      + uf[2*ic-1][2*jc+1]
-    
+            uc[ic][jc] =  0.25 * uf[2*ic][2*jc]                                                         \
+                        + 0.125  * (                       uf[2*ic-1][2*jc  ]                           \
+                                    + uf[2*ic  ][2*jc-1]                      + uf[2*ic  ][2*jc+1]      \
+                                                         + uf[2*ic+1][2*jc  ]                     )     \
+                        + 0.0625 * (  uf[2*ic-1][2*jc-1]                      + uf[2*ic-1][2*jc+1]      \
+                                                                                                        \
                                     + uf[2*ic+1][2*jc-1]                      + uf[2*ic+1][2*jc+1]);
         }
 }
@@ -85,7 +85,7 @@ void compute_residual(double **u, double **rhs, double **res, int N, double invh
     int i,j;
     for (i = 1; i < N; i++)
         for (j = 1; j < N; j++)
-            res[i][j] = (rhs[i][j] - (4.*u[i][j] - u[i-1][j] - u[i+1][j] - u[i][j-1] - u[i][j+1]) * invhsq);
+            res[i][j] = rhs[i][j] - (4.*u[i][j] - u[i-1][j] - u[i+1][j] - u[i][j-1] - u[i][j+1]) * invhsq;
 }
 
 
@@ -123,7 +123,7 @@ void jacobi(double **u, double **rhs, int N, double hsq, int ssteps)
             for (j = 1; j < N; j++){
                 //unew[i]  = u[i] +  omega * 0.5 * (hsq*rhs[i] + u[i - 1] + u[i + 1] - 2*u[i]);
                 unew[i][j] = u[i][j] + omega * 0.25 * (hsq * rhs[i][j] + u[i-1][j] + u[i+1][j] + \
-                            u[i][j-1] + u[i][j+1]);
+                            u[i][j-1] + u[i][j+1] -4*u[i][j]);
             }
         }
 //        memcpy(u, unew, (N+1)*(N+1)*sizeof(double));
@@ -170,17 +170,22 @@ int main(int argc, char * argv[])
     double *invhsq = calloc(levels, sizeof(double));
     double *hsq = calloc(levels, sizeof(double));
     double **res = calloc(Nfine + 1, sizeof(double));
+
     for (int i = 0; i<Nfine+1; ++i)
         res[i] = calloc(Nfine + 1, sizeof (double));
+
     for (l = 0; l < levels; ++l) {
         N[l] = Nfine / (int) pow(2,l);
         double h = 1.0 / N[l];
         hsq[l] = h * h;
+
         printf("MG level %2d, N = %8d\n", l, N[l]);
         invhsq[l] = 1.0 / hsq[l];
+
         u[l]    = calloc(N[l]+1, sizeof (double*));
         for (int i = 0; i<N[l]+1; ++i)
             u[l][i] = calloc(N[l] + 1, sizeof (double));
+
         rhs[l] = calloc(N[l] + 1, sizeof (double*));
         for (int i = 0; i<N[l]+1; ++i)
             rhs[l][i] = calloc(N[l] + 1, sizeof (double));
