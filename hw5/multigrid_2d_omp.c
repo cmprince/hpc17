@@ -1,9 +1,11 @@
-/* Multigrid for solving -u''=f for x in (0,1)
- * Usage: ./multigrid_1d < Nfine > < iter > [s-steps]
+/* Multigrid for solving -u''=f for x in (0,1)x(0,1)
+ * Usage: ./multigrid_1d < Nfine > < iter > < nprocs > [s-steps]
  * NFINE: number of intervals on finest level, must be power of 2
  * ITER: max number of V-cycle iterations
+ * NPROCS: number of openmp threads
  * S-STEPS: number of Jacobi smoothing steps; optional
- * Author: Georg Stadler, April 2017
+ * Author: Christopher Prince, May 2017
+ * Modified from a 1-D serial version written by Georg Stadler
  */
 #include <stdio.h>
 #include <stdlib.h>
